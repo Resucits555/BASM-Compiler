@@ -18,11 +18,11 @@ static ifstream OpenSourceFile(char* sourceFilePath) {
 
 
 
-static opcode_X86 findOpcode(const char* string) {
+static opcode_X86 FindOpcode(string& str) {
     opcode_X86 opcode = { 0xFFFFFFFF };
     
     for (int obj = 0; obj < std::size(opcodeTable); obj++) {
-        for (int i = 0; opcodeTable[obj].mnemonic[i] == string[i]; i++) {
+        for (int i = 0; opcodeTable[obj].mnemonic[i] == str[i]; i++) {
             const char* chr = &opcodeTable[obj].mnemonic[i];
             if (*chr == NULL) {
                 opcode = opcodeTable[obj].opcode;
@@ -37,71 +37,84 @@ static opcode_X86 findOpcode(const char* string) {
 
 
 
+static bool InGroup(int groupI, char strChar) {
+    const char alphabet[] = "etaoinshrdlcumwfgypbvkjxqzETAOINSHRDLCUMWFGYPBVKJXQZ";
+    const char numbers[] = "0123456789";
+    const char spaces[] = "\x20\x09\x0B";
+    const char* groups[] = { alphabet, numbers, spaces };
+
+    const char* group = groups[groupI];
+    for (int i = 0; group[i] != NULL; i++) {
+        if (group[i] == strChar)
+            return true;
+    }
+    return false;
+}
+
+
 //'%' escape and regex character
-static intPair findRgx(string str, string pattern, int start) {
-    struct border {
-        char l;
-        char h;
-
-        bool inside(int var) const {
-            if (var >= l && var <= h)
-                return true;
-            return false;
-        }
-    };
-
-    const border alphabet = { 'a', 'Z' };
-    const border numbers = { '0', '9' };
-    const border* borders[] = { &alphabet, &numbers };
-
-    ushort patI = 0;
+//COULD STILL HAVE ERRORS
+static intPair FindRgx(string str, string pattern, int start) {
+    ushort strI = --start;
+    ushort strIstart = 0;
     bool magic = true;
-    for (ushort strI = start; strI < str.length(); strI++) {
-        const char strChar = str[strI];
+    for (ushort patI = 0; patI < pattern.length(); ++patI) {
+        ++strI;
+        
+        if (!patI)
+            strIstart = strI;
 
-        if (patI == pattern.length())
-            return { strI - patI, strI };
+        if (strI >= str.length())
+            return { -1, -2 };
 
-        if (strChar == '%' && magic) {
+        if (pattern[patI] == '%' && magic) {
             ubyte group;
-            switch (str[strI + 1]) {
+            switch (pattern[++patI]) {
             case 'a':
                 group = 0;
                 break;
             case 'd':
                 group = 1;
                 break;
+            case 's':
+                group = 2;
+                break;
             case '%':
-                ++strI;
                 magic = false;
                 goto escape;
             default:
                 ++strI;
                 goto escape;
             }
-            ++strI;
 
-            if (!borders[group]->inside(strChar)) {
-                patI = 0;
-                continue;
+            switch (pattern[++patI]) {
+            case '+':
+                if (!InGroup(group, str[strI])) {
+                    patI = -1;
+                    break;
+                }
+
+                while (strI < str.length() && InGroup(group, str[strI + 1]))
+                    ++strI;
+                break;
+            default:
+                if (!InGroup(group, str[strI]))
+                    patI = 0;
+                --patI;
             }
 
-            escape:
-            ++patI;
             continue;
         }
 
+        escape:
         magic = true;
 
-        if (!strChar == pattern[patI]) {
-            patI = 0;
-            continue;
-        }
-
-        ++patI;
+        if (!str[strI] == pattern[patI] && str[strI + 1] != '?')
+            patI = -1;
     }
 
-    return { -1, -1 };
+    exitfor:
+    return { strIstart, ++strI - strIstart };
 }
 
 
@@ -109,14 +122,24 @@ static intPair findRgx(string str, string pattern, int start) {
 void CompileSource(char* sourceFilePath) {
     ifstream sourceFile = OpenSourceFile(sourceFilePath);
 
+    ushort line = 0;
     while (true) {
         string inputLine;
+        ++line;
+
         getline(sourceFile, inputLine);
 
         if (sourceFile.fail())
             Error("Failed to read source file", sourceFile.tellg());
+
         
-        cout << inputLine << '\n';
+        intPair mnemonicPos = FindRgx(inputLine, "%a+", 0);
+        if (mnemonicPos.a < 0)
+            Error("Wrong format", line);
+
+        string mnemonic = inputLine.substr(mnemonicPos.a, mnemonicPos.b).c_str();
+        inputLine = inputLine.substr(mnemonicPos.a + mnemonicPos.b, SIZE_MAX);
+        cout << mnemonic << ": 0x" << std::hex << FindOpcode(mnemonic).fullOpcode << '\n';
 
         
         if (sourceFile.eof())
