@@ -21,5 +21,6 @@ int main(int argc, char* argv[]) {
     CompileSource(argv[1]);
 
     std::cout << "Program successfully compiled!\n";
+
     return 0;
 }

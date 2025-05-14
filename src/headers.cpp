@@ -53,6 +53,7 @@ void WriteHeaders(char* sourceFilePath) {
     writeCOFFHeader();
 
     executableFile.close();
+    std::remove(executablePath.c_str()); //temporary, don't want to delete it all the time
 }
 
 

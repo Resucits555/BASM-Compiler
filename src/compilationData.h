@@ -40,7 +40,7 @@ struct opcodeParts_X86 {
 };
 
 union opcode_X86 {
-    uint32_t fullOpcode;
+    uint32_t full;
     opcodeParts_X86 parts;
 };
 
