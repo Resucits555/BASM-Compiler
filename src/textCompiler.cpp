@@ -1,18 +1,18 @@
 #include <string>
+#include <list>
 
 #include "main.h"
 #include "compilationData.h"
 
 using namespace std;
-static ushort line = 0;
+ushort line = 0;
 
 
 static ifstream OpenSourceFile(char* sourceFilePath) {
     ifstream sourceFile;
     sourceFile.open(sourceFilePath);
     if (!sourceFile.is_open()) {
-        cerr << "Unable to open file";
-        exit(1);
+        Error("Failed to open source file");
     }
 
     return sourceFile;
@@ -100,12 +100,12 @@ static intPair FindRgx(string str, string pattern, int start) {
 
             switch (pattern[++patI]) {
             case '+':
-                if (InGroup(group, str[strI]) && negate) { //basically XOR
+                if (InGroup(group, str[strI]) != !negate) { //basically XOR
                     patI = -1;
                     break;
                 }
 
-                while (strI < str.length() && InGroup(group, str[strI + 1]))
+                while (strI < str.length() && !(InGroup(group, str[strI + 1]) != !negate))
                     ++strI;
                 break;
             default:
@@ -133,15 +133,20 @@ static intPair FindRgx(string str, string pattern, int start) {
 inline void CompileSource(char* sourceFilePath) {
     ifstream sourceFile = OpenSourceFile(sourceFilePath);
 
-    while (true) {
+    ubyte section = 0xFF;
+
+    list<operation> operationList;
+    operationList.resize(20);
+
+    while (!sourceFile.eof()) {
         string inputLine;
         ++line;
 
         getline(sourceFile, inputLine);
 
         if (sourceFile.fail())
-            Error("Failed to read source file", sourceFile.tellg());
-
+            Error("Failed to read source file");
+        
 
 
         switch (inputLine[FindRgx(inputLine, "%S", 0).a]) {
@@ -150,7 +155,6 @@ inline void CompileSource(char* sourceFilePath) {
             inputLine = inputLine.substr(sectionPos.a, sectionPos.b);
             const char sections[][9] = { "bss", "comment", "data", "debug", "init", "text" };
 
-            ubyte section = 0xFF;
             for (int obj = 0; obj < std::size(sections); obj++) {
                 for (int i = 0; sections[obj][i] == inputLine[i]; i++) {
                     const char* chr = &opcodeTable[obj].mnemonic[i];
@@ -161,23 +165,26 @@ inline void CompileSource(char* sourceFilePath) {
                 }
             }
             fullBreak:
-            cout << to_string(section);
 
             break;
         }
+
         default:
+            intPair operationPart = FindRgx(inputLine, "%a+ %S+ %S+", 0);
+            if (operationPart.a < 0)
+                Error("Instruction format not found in line");
+
+            inputLine = inputLine.substr(operationPart.a, operationPart.b);
+
+
             intPair mnemonicPos = FindRgx(inputLine, "%a+", 0);
-            if (mnemonicPos.a < 0)
-                break;
 
             string mnemonic = inputLine.substr(mnemonicPos.a, mnemonicPos.b);
-            inputLine = inputLine.substr(mnemonicPos.a + mnemonicPos.b, SIZE_MAX);
             opcode_X86 opcode = FindOpcode(mnemonic);
+
+            //TODO: Get Arguments
+            operationList.push_back({opcode});
         }
-
-
-        if (sourceFile.eof())
-            break;
     }
 
     sourceFile.close();

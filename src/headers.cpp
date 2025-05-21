@@ -12,7 +12,6 @@ static string cutLastInPath(string path) {
             break;
     }
     path = path.substr(0, end);
-
     return path;
 }
 
@@ -44,8 +43,7 @@ void WriteHeaders(char* sourceFilePath) {
 
     executableFile.open(executablePath, ios::binary);
     if (!executableFile.is_open()) {
-        std::cerr << "Failed to create executable\n";
-        exit(1);
+        Error("Failed to create executable file");
     }
 
     writeDOSHeader();

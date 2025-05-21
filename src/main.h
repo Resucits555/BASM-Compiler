@@ -11,6 +11,8 @@ struct intPair {
     int b;
 };
 
-extern void Error(const char*, unsigned int);
+extern ushort line;
+
+extern void Error(const char*);
 extern void WriteHeaders(char*);
 extern void CompileSource(char*);

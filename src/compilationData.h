@@ -90,3 +90,15 @@ const mnemonicOpcode_X86 opcodeTable[] = {
     { "push", 0x600FF, r_m|_16|_32|_64, 0, 0, 0 },
     { "sub", 0x28, sixOptions }
 };
+
+
+
+struct operation {
+    opcode_X86 opcode;
+    uint16_t arg1type;
+    size_t arg1;
+    uint16_t arg2type;
+    size_t arg2;
+    uint16_t arg3type;
+    size_t arg3;
+};
