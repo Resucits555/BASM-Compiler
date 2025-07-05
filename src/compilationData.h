@@ -110,10 +110,10 @@ struct argument {
 
 
 struct operation {
-    int8_t prefixes[4];
-    opcode_X86 opcode;
-    int8_t modrm;
-    int8_t sib;
+    int8_t prefixes[4] = {};
+    opcode_X86 opcode = {};
+    int8_t modrm = 0;
+    int8_t sib = 0;
     argument arg1;
     argument arg2;
     argument arg3;

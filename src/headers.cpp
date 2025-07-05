@@ -3,9 +3,7 @@
 #include "main.h"
 
 
-using namespace std;
-
-static string cutLastInPath(string path) {
+static std::string cutLastInPath(std::string path) {
     ubyte end = path.length();
     for (end; end > 0; end--) {
         if (path[end] == '/')
@@ -18,9 +16,9 @@ static string cutLastInPath(string path) {
 
 
 const char nulls[50] = "";
-const float nullsSize = sizeof(nulls);
+constexpr ubyte nullsSize = sizeof(nulls);
 
-static void fillNullUntil(ofstream& file, int until) {
+static void fillNullUntil(std::ofstream& file, int until) {
     int toFill = until - file.tellp();
 
     for (toFill; toFill >= nullsSize; toFill -= nullsSize)
@@ -36,12 +34,12 @@ static void writeDOSStub();
 static void writeCOFFHeader();
 
 
-ofstream executableFile;
+std::ofstream executableFile;
 
 void WriteHeaders(char* sourceFilePath) {
-    string executablePath = cutLastInPath(sourceFilePath).append("/a.exe");
+    std::string executablePath = cutLastInPath(sourceFilePath).append("/a.exe");
 
-    executableFile.open(executablePath, ios::binary);
+    executableFile.open(executablePath, std::ios::binary);
     if (!executableFile.is_open()) {
         Error("Failed to create executable file");
     }
@@ -89,8 +87,8 @@ static void writeCOFFHeader() {
 
     int ret = executableFile.tellp();
     executableFile.seekp(0x98);
-    chrono::system_clock::time_point t = chrono::system_clock::now();
-    uint32_t epochTime = chrono::duration_cast<chrono::seconds>(t.time_since_epoch()).count();
+    std::chrono::system_clock::time_point t = std::chrono::system_clock::now();
+    uint32_t epochTime = std::chrono::duration_cast<std::chrono::seconds>(t.time_since_epoch()).count();
     executableFile.write((char*)&epochTime, 4);
     executableFile.seekp(ret);
 }

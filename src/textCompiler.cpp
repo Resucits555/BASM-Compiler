@@ -4,12 +4,10 @@
 #include "main.h"
 #include "compilationData.h"
 
-using namespace std;
 ushort line = 0;
 
-
-static ifstream OpenSourceFile(char* sourceFilePath) {
-    ifstream sourceFile;
+static std::ifstream OpenSourceFile(char* sourceFilePath) {
+    std::ifstream sourceFile;
     sourceFile.open(sourceFilePath);
     if (!sourceFile.is_open()) {
         Error("Failed to open source file");
@@ -20,7 +18,7 @@ static ifstream OpenSourceFile(char* sourceFilePath) {
 
 
 
-static opcode_X86 FindOpcode(string& str) {
+static opcode_X86 FindOpcode(std::string& str) {
     opcode_X86 opcode = { 0xFFFFFFFF };
     
     for (int obj = 0; obj < std::size(opcodeTable); obj++) {
@@ -57,7 +55,7 @@ static bool InGroup(int groupI, char strChar) {
 
 //'%' escape and regex character
 //COULD STILL HAVE ERRORS
-static substr FindRgx(string str, string pattern, int start) {
+static substr FindRgx(std::string str, std::string pattern, int start) {
     int& strI = start;
     --strI;
     ushort strIstart = 0;
@@ -142,7 +140,7 @@ static substr FindRgx(string str, string pattern, int start) {
 
 
 
-inline static ubyte DetectSection(string& inputLine, substr sectionPos) {
+inline static ubyte DetectSection(std::string& inputLine, substr sectionPos) {
     inputLine = inputLine.substr(sectionPos.a, sectionPos.b);
     const char sections[][9] = { "bss", "comment", "data", "debug", "init", "text" };
 
@@ -159,7 +157,7 @@ inline static ubyte DetectSection(string& inputLine, substr sectionPos) {
 
 
 
-inline static void GetArguments(string& inputLine, argument* args, substr& mnemonicPos) {
+inline static void GetArguments(std::string& inputLine, argument* args, substr& mnemonicPos) {
     substr argPos = FindRgx(inputLine, "%d+", mnemonicPos.end());
 
     for (int argI = 0; argPos.a >= 0; ++argI) {
@@ -194,17 +192,16 @@ inline static void GetArguments(string& inputLine, argument* args, substr& mnemo
 
 
 inline void CompileSource(char* sourceFilePath) {
-    ifstream sourceFile = OpenSourceFile(sourceFilePath);
+    std::ifstream sourceFile = OpenSourceFile(sourceFilePath);
 
     ubyte section = 0xFF;
 
-    list<operation> operationList;
+    std::list<operation> operationList;
     operationList.resize(20);
 
     while (!sourceFile.eof()) {
-        string inputLine;
+        std::string inputLine;
         ++line;
-
         getline(sourceFile, inputLine);
 
         if (sourceFile.fail())

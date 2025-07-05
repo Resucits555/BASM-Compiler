@@ -1,13 +1,11 @@
 #include "main.h"
 
-using namespace std;
-
 
 void Error(const char* message) {
-    cerr << "ERROR: ";
-    cerr << message << '.';
+    std::cerr << "ERROR: ";
+    std::cerr << message << '.';
     if (line) {
-        cerr << " Line: " << line;
+        std::cerr << " Line: " << line;
     }
     exit(1);
 }
