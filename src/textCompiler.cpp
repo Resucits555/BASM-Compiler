@@ -42,8 +42,9 @@ static opcode_X86 FindOpcode(string& str) {
 static bool InGroup(int groupI, char strChar) {
     const char alphabet[] = "etaoinshrdlcumwfgypbvkjxqzETAOINSHRDLCUMWFGYPBVKJXQZ";
     const char numbers[] = "0123456789";
+    const char alphanum[] = "etaoinshrdlcumwfgypbvkjxqzETAOINSHRDLCUMWFGYPBVKJXQZ0123456789";
     const char spaces[] = " \t\x0B";
-    const char* groups[] = { alphabet, numbers, spaces };
+    const char* groups[] = { alphabet, numbers, alphanum, spaces };
 
     const char* group = groups[groupI];
     for (int i = 0; group[i] != NULL; i++) {
@@ -56,7 +57,7 @@ static bool InGroup(int groupI, char strChar) {
 
 //'%' escape and regex character
 //COULD STILL HAVE ERRORS
-static intPair FindRgx(string str, string pattern, int start) {
+static substr FindRgx(string str, string pattern, int start) {
     int& strI = start;
     --strI;
     ushort strIstart = 0;
@@ -87,8 +88,11 @@ static intPair FindRgx(string str, string pattern, int start) {
             case 'd':
                 group = 1;
                 break;
-            case 's':
+            case 'w':
                 group = 2;
+                break;
+            case 's':
+                group = 3;
                 break;
             case '%':
                 magic = false;
@@ -109,7 +113,7 @@ static intPair FindRgx(string str, string pattern, int start) {
                     ++strI;
                 break;
             default:
-                if (InGroup(group, str[strI]) && negate)
+                if (InGroup(group, str[strI]) != !negate)
                     patI = 0;
                 --patI;
             }
@@ -120,12 +124,71 @@ static intPair FindRgx(string str, string pattern, int start) {
         escape:
         magic = true;
 
-        if (!str[strI] == pattern[patI] && str[strI + 1] != '?')
-            patI = -1;
+        if (pattern[patI + 1] != '?') {
+            if (!(str[strI] == pattern[patI]))
+                patI = -1;
+        }
+        else {
+            --strI;
+            ++patI;
+        }
+            
     }
 
     exitfor:
     return { strIstart, ++strI - strIstart };
+}
+
+
+
+
+inline static ubyte DetectSection(string& inputLine, substr sectionPos) {
+    inputLine = inputLine.substr(sectionPos.a, sectionPos.b);
+    const char sections[][9] = { "bss", "comment", "data", "debug", "init", "text" };
+
+    for (int obj = 0; obj < std::size(sections); obj++) {
+        for (int i = 0; sections[obj][i] == inputLine[i]; i++) {
+            if (sections[obj][i] == NULL) {
+                return obj;
+            }
+        }
+    }
+    
+    return UINT8_MAX;
+}
+
+
+
+inline static void GetArguments(string& inputLine, argument* args, substr& mnemonicPos) {
+    substr argPos = FindRgx(inputLine, "%d+", mnemonicPos.end());
+
+    for (int argI = 0; argPos.a >= 0; ++argI) {
+        argument& arg = args[argI];
+        
+        arg.used = true;
+
+        if (inputLine[argPos.a - 1] == '.') {
+
+            switch (inputLine.substr(argPos.a - 2, 1)[0]) {
+            case 'r':
+                arg.type = reg;
+                arg.val = stoi(inputLine.substr(argPos.a, argPos.b));
+                break;
+            case 'l':
+                //TODO: lable things, no break at end
+            case 'm':
+                arg.type = mem;
+                arg.val = stoi(inputLine.substr(argPos.a, argPos.b));
+                break;
+            }
+        }
+        else {
+            arg.type = imm;
+            arg.val = stoi(inputLine.substr(argPos.a, argPos.b));
+        }
+
+        argPos = FindRgx(inputLine, "%d+", argPos.end() + 2);
+    }
 }
 
 
@@ -149,42 +212,34 @@ inline void CompileSource(char* sourceFilePath) {
         
 
 
-        switch (inputLine[FindRgx(inputLine, "%S", 0).a]) {
-        case '.': {
-            intPair sectionPos = FindRgx(inputLine, "%a+", 1);
-            inputLine = inputLine.substr(sectionPos.a, sectionPos.b);
-            const char sections[][9] = { "bss", "comment", "data", "debug", "init", "text" };
-
-            for (int obj = 0; obj < std::size(sections); obj++) {
-                for (int i = 0; sections[obj][i] == inputLine[i]; i++) {
-                    const char* chr = &opcodeTable[obj].mnemonic[i];
-                    if (*chr == NULL) {
-                        section = obj;
-                        goto fullBreak;
-                    }
-                }
-            }
-            fullBreak:
-
-            break;
+        if (inputLine[FindRgx(inputLine, "%S", 0).a] == '.') {
+            section = DetectSection(inputLine, FindRgx(inputLine, "%a+", 1));
+            continue;
         }
+        
+        
+        substr operationPart;
+        operationPart.a = FindRgx(inputLine, "%a", 0).a;
 
-        default:
-            intPair operationPart = FindRgx(inputLine, "%a+ %S+ %S+", 0);
-            if (operationPart.a < 0)
-                Error("Instruction format not found in line");
-
-            inputLine = inputLine.substr(operationPart.a, operationPart.b);
-
-
-            intPair mnemonicPos = FindRgx(inputLine, "%a+", 0);
-
-            string mnemonic = inputLine.substr(mnemonicPos.a, mnemonicPos.b);
-            opcode_X86 opcode = FindOpcode(mnemonic);
-
-            //TODO: Get Arguments
-            operationList.push_back({opcode});
+        int end = FindRgx(inputLine, "%s+;", operationPart.a).a;
+        if (end < 0) {
+            operationPart.b = INT_MAX;
         }
+        else {
+            operationPart.b = end - operationPart.a;
+        }
+        inputLine = inputLine.substr(operationPart.a, operationPart.b);
+
+
+        substr mnemonicPos = FindRgx(inputLine, "%a+", 0);
+
+        argument args[3];
+        GetArguments(inputLine, args, mnemonicPos);
+
+        opcode_X86 opcode = FindOpcode(inputLine.substr(mnemonicPos.a, mnemonicPos.b));
+
+
+        operationList.push_back({ {}, opcode, 0, 0, args[0], args[1], args[2] });
     }
 
     sourceFile.close();

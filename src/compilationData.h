@@ -6,31 +6,38 @@ enum specialSpecifiers : ubyte {
     repeats = 2     //mnemonic with the same name after this one
 };
 
-enum operandTypes : ubyte {
-    r = 1,
-    m = 2,
+
+enum explicitOperands : ubyte {
+    reg = 1,
+    mem = 2,
     r_m = 3,
     xmm = 4,
     imm = 5,
-    ax = 6,
-    cx = 7,
-    dx = 8,
-    fs = 9,
-    gs = 10,
-    rel = 11,
-    sreg = 12,
-    moffs = 13,
-    rbp = 14,
-    eflags = 15,
-    mreal = 16,
-    st = 17
+    rel = 6,
+    moffs = 7,
+    sreg = 8
 };
+
+enum implicitOperands : ubyte {
+    ax = 16,
+    cx = 17,
+    dx = 18,
+    bx = 19,
+    fs = 20,
+    gs = 21,
+    rbp = 22,
+    flags = 23,
+    mreal = 24,
+    st = 25
+};
+
 
 enum operandSizes : ushort {
     _8 = 32,
     _16 = 64,
     _32 = 128,
-    _64 = 256
+    _64 = 256,
+    _128 = 512
 };
 
 struct opcodeParts_X86 {
@@ -61,7 +68,8 @@ struct mnemonicOpcode_X86 {
 3.  Enter the first opcode you'll find associated with the mnemonic.
     If it has many (so, o), then add them from right to left into one number. Example:
     po = 0x10, so = 0x20, o = 4 -> 0x42010
-4.  Add operand specifiers. Use | for multiple. Storage type + bits. If one has 'sixOptions', just put 0
+4.  Add operand specifiers. Use | for multiple. Storage type + size. If one has 'sixOptions', just put 0.
+    Implicit operands should be marked with 'imp'
 5.  Add specialSpecifiers. Use | for multiple
 
 Add 'repeats' to any mnemonic that has exactly the same name except when it's the last. E.g. 'call'
@@ -75,8 +83,8 @@ const mnemonicOpcode_X86 opcodeTable[] = {
     { "dec", 0x100FE, r_m|_8, 0, 0, repeats },
     { "dec", 0x100FF, r_m|_16|_32|_64, 0, 0, 0 },
     { "div", 0x600F7, dx|_64, ax|_64, r_m|_16|_32|_64, 0 },
-    { "idiv", 0x700F7, dx|_64,ax|_64, r_m|_16 |_32|_64, 0 },
-    { "imul", 0x500F7, dx|_64,ax|_64, r_m|_16|_32|_64, 0 },
+    { "idiv", 0x700F7, dx|_64, ax|_64, r_m|_16|_32|_64, 0 },
+    { "imul", 0x500F7, dx|_64, ax|_64, r_m|_16|_32|_64, 0 },
     { "inc", 0x000FE, r_m|_8, 0, 0, repeats },
     { "inc", 0x000FF, r_m|_8, 0, 0, 0 },
     { "mov", 0xA0, ax|_8, moffs|_8, 0, repeats },
@@ -93,12 +101,20 @@ const mnemonicOpcode_X86 opcodeTable[] = {
 
 
 
+struct argument {
+    uint64_t type = UINT64_MAX;
+    bool used = false;
+    size_t val = SIZE_MAX;
+};
+
+
+
 struct operation {
+    int8_t prefixes[4];
     opcode_X86 opcode;
-    uint16_t arg1type;
-    size_t arg1;
-    uint16_t arg2type;
-    size_t arg2;
-    uint16_t arg3type;
-    size_t arg3;
+    int8_t modrm;
+    int8_t sib;
+    argument arg1;
+    argument arg2;
+    argument arg3;
 };

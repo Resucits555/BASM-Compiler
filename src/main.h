@@ -6,9 +6,13 @@ typedef unsigned char ubyte;
 typedef signed char sbyte;
 typedef unsigned short ushort;
 
-struct intPair {
+struct substr {
     int a;
     int b;
+
+    inline int end() {
+        return a + b;
+    }
 };
 
 extern ushort line;
