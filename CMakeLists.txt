@@ -9,4 +9,5 @@ add_executable(main
 src/main.cpp
 src/headers.cpp
 src/textCompiler.cpp)
+
 target_compile_features(main PRIVATE cxx_std_17)

@@ -1,10 +1,9 @@
 #include <string>
-#include <list>
+#include <mini-rgx.h>
 
 #include "main.h"
 #include "compilationData.h"
 
-ushort line = 0;
 
 static std::ifstream OpenSourceFile(char* sourceFilePath) {
     std::ifstream sourceFile;
@@ -15,6 +14,8 @@ static std::ifstream OpenSourceFile(char* sourceFilePath) {
 
     return sourceFile;
 }
+
+
 
 
 
@@ -31,118 +32,16 @@ static opcode_X86 FindOpcode(std::string& str) {
         }
     }
 
-    fullBreak:
+fullBreak:
     return opcode;
 }
 
 
 
-static bool InGroup(int groupI, char strChar) {
-    const char alphabet[] = "etaoinshrdlcumwfgypbvkjxqzETAOINSHRDLCUMWFGYPBVKJXQZ";
-    const char numbers[] = "0123456789";
-    const char alphanum[] = "etaoinshrdlcumwfgypbvkjxqzETAOINSHRDLCUMWFGYPBVKJXQZ0123456789";
-    const char spaces[] = " \t\x0B";
-    const char* groups[] = { alphabet, numbers, alphanum, spaces };
-
-    const char* group = groups[groupI];
-    for (int i = 0; group[i] != NULL; i++) {
-        if (group[i] == strChar)
-            return true;
-    }
-    return false;
-}
 
 
-//'%' escape and regex character
-//COULD STILL HAVE ERRORS
-static substr FindRgx(std::string str, std::string pattern, int start) {
-    int& strI = start;
-    --strI;
-    ushort strIstart = 0;
-    bool magic = true;
-    for (ushort patI = 0; patI < pattern.length(); ++patI) {
-        ++strI;
-        
-        if (!patI)
-            strIstart = strI;
-
-        if (strI >= str.length())
-            return { -1, -2 };
-
-        if (pattern[patI] == '%' && magic) {
-            bool negate = false;
-            ++patI;
-            if (pattern[patI] >= 'A' && pattern[patI] <= 'Z') {
-                negate = true;
-                pattern[patI] += 0x20;
-            }
-
-            ubyte group;
-            
-            switch (pattern[patI]) {
-            case 'a':
-                group = 0;
-                break;
-            case 'd':
-                group = 1;
-                break;
-            case 'w':
-                group = 2;
-                break;
-            case 's':
-                group = 3;
-                break;
-            case '%':
-                magic = false;
-                goto escape;
-            default:
-                ++strI;
-                goto escape;
-            }
-
-            switch (pattern[++patI]) {
-            case '+':
-                if (InGroup(group, str[strI]) != !negate) { //basically XOR
-                    patI = -1;
-                    break;
-                }
-
-                while (strI < str.length() && !(InGroup(group, str[strI + 1]) != !negate))
-                    ++strI;
-                break;
-            default:
-                if (InGroup(group, str[strI]) != !negate)
-                    patI = 0;
-                --patI;
-            }
-
-            continue;
-        }
-
-        escape:
-        magic = true;
-
-        if (pattern[patI + 1] != '?') {
-            if (!(str[strI] == pattern[patI]))
-                patI = -1;
-        }
-        else {
-            --strI;
-            ++patI;
-        }
-            
-    }
-
-    exitfor:
-    return { strIstart, ++strI - strIstart };
-}
-
-
-
-
-inline static ubyte DetectSection(std::string& inputLine, substr sectionPos) {
+inline static std::expected<ubyte, bool> DetectSection(std::string& inputLine, mrx::substr sectionPos) {
     inputLine = inputLine.substr(sectionPos.a, sectionPos.b);
-    const char sections[][9] = { "bss", "comment", "data", "debug", "init", "text" };
 
     for (int obj = 0; obj < std::size(sections); obj++) {
         for (int i = 0; sections[obj][i] == inputLine[i]; i++) {
@@ -152,18 +51,16 @@ inline static ubyte DetectSection(std::string& inputLine, substr sectionPos) {
         }
     }
     
-    return UINT8_MAX;
+    return std::unexpected(false);
 }
 
 
 
-inline static void GetArguments(std::string& inputLine, argument* args, substr& mnemonicPos) {
-    substr argPos = FindRgx(inputLine, "%d+", mnemonicPos.end());
+inline static void GetArguments(std::string& inputLine, argument* args, mrx::substr& mnemonicPos) {
+    mrx::substr argPos = mrx::FindRgx(inputLine, "%d+", mnemonicPos.end());
 
     for (int argI = 0; argPos.a >= 0; ++argI) {
         argument& arg = args[argI];
-        
-        arg.used = true;
 
         if (inputLine[argPos.a - 1] == '.') {
 
@@ -185,19 +82,70 @@ inline static void GetArguments(std::string& inputLine, argument* args, substr& 
             arg.val = stoi(inputLine.substr(argPos.a, argPos.b));
         }
 
-        argPos = FindRgx(inputLine, "%d+", argPos.end() + 2);
+        argPos = mrx::FindRgx(inputLine, "%d+", argPos.end() + 2);
     }
 }
 
 
 
-inline void CompileSource(char* sourceFilePath) {
+
+static ubyte GetArgumentSize(uintmax_t value) {
+    return _64
+        | ((value & 0xFFFFFFFF00000000 == 0) * _32)
+        | ((value & 0xFFFFFFFFFFFF0000 == 0) * _16)
+        | ((value & 0xFFFFFFFFFFFFFF00 == 0) * _8);
+}
+
+
+
+
+inline static void WriteToExe(std::ofstream& exeFile, instruction op, argument* args) {
+    ubyte towrite = 0;
+    for (towrite; op.prefixes[towrite]; towrite++);
+    exeFile.write((char*)&op.prefixes, towrite);
+
+
+    opcodeParts_X86& prs = op.opcode.parts;
+
+    ubyte oppart[4];
+    towrite = 1;
+
+    if (prs.OF) {
+        oppart[0] = prs.OF;
+        oppart[1] = prs.po;
+        towrite++;
+    }
+    else
+        oppart[0] = prs.po;
+
+    if (prs.so)
+        oppart[towrite++] = prs.so;
+    if (prs.o >= 0)
+        oppart[towrite++] = prs.o;
+
+    exeFile.write((char*)&oppart, towrite);
+
+
+    //Missing: modr/m, sib, etc.
+
+    
+
+    for (ubyte arg = 0; args[arg].type; arg++) {
+        ubyte argumentSize = GetArgumentSize(args[arg].val);
+        exeFile.write((char*)&args[arg].val, argumentSize); //TODO: Include possible var sizes
+    }
+}
+
+
+
+
+inline void CompileSource(char* sourceFilePath, std::ofstream& exeFile) {
     std::ifstream sourceFile = OpenSourceFile(sourceFilePath);
+    exeFile.seekp(baseOfCode);
 
     ubyte section = 0xFF;
+    unsigned long line = 0;
 
-    std::list<operation> operationList;
-    operationList.resize(20);
 
     while (!sourceFile.eof()) {
         std::string inputLine;
@@ -207,36 +155,48 @@ inline void CompileSource(char* sourceFilePath) {
         if (sourceFile.fail())
             Error("Failed to read source file");
         
+        sbyte nonSpace = mrx::FindRgx(inputLine, "%S", 0).a;
 
+        if (nonSpace < 0)
+            continue;
 
-        if (inputLine[FindRgx(inputLine, "%S", 0).a] == '.') {
-            section = DetectSection(inputLine, FindRgx(inputLine, "%a+", 1));
+        if (inputLine[nonSpace] == '.') {
+            auto newSection = DetectSection(inputLine, mrx::FindRgx(inputLine, "%a+", 1));
+            if (newSection)
+                section = newSection.value();
+            else
+                Error("Unknown section name", line);
             continue;
         }
         
         
-        substr operationPart;
-        operationPart.a = FindRgx(inputLine, "%a", 0).a;
+        mrx::substr operationPart;
+        operationPart.a = mrx::FindRgx(inputLine, "%a", 0).a;
 
-        int end = FindRgx(inputLine, "%s+;", operationPart.a).a;
+        ubyte end = mrx::FindRgx(inputLine, "%s+;", operationPart.a).a;
         if (end < 0) {
-            operationPart.b = INT_MAX;
+            operationPart.b = UINT8_MAX;
         }
         else {
             operationPart.b = end - operationPart.a;
         }
+
+        if (operationPart.a > operationPart.b || (operationPart.a < 0 && operationPart.b < 0))
+            continue;
+
         inputLine = inputLine.substr(operationPart.a, operationPart.b);
 
 
-        substr mnemonicPos = FindRgx(inputLine, "%a+", 0);
+        mrx::substr mnemonicPos = mrx::FindRgx(inputLine, "%a+", 0);
 
         argument args[3];
         GetArguments(inputLine, args, mnemonicPos);
 
-        opcode_X86 opcode = FindOpcode(inputLine.substr(mnemonicPos.a, mnemonicPos.b));
+        std::string mnemonic = inputLine.substr(mnemonicPos.a, mnemonicPos.b);
+        opcode_X86 opcode = FindOpcode(mnemonic);
+        opcode.parts.o = -1;
 
-
-        operationList.push_back({ {}, opcode, 0, 0, args[0], args[1], args[2] });
+        WriteToExe(exeFile, { {}, opcode, 0, 0 }, args);
     }
 
     sourceFile.close();

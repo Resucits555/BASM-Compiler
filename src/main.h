@@ -1,22 +1,25 @@
 #pragma once
+
 #include <iostream>
 #include <fstream>
+#include <expected>
 
 typedef unsigned char ubyte;
 typedef signed char sbyte;
 typedef unsigned short ushort;
+typedef unsigned long ulong;
 
-struct substr {
-    int a;
-    int b;
 
-    inline int end() {
-        return a + b;
-    }
-};
+const ushort sectionAlignment = 0x1000;
 
-extern ushort line;
+const double minHeadersSize = 0x500;
+const ulong baseOfCode = std::ceil(minHeadersSize / (double)sectionAlignment) * sectionAlignment;
+
+const char sections[][8] = { "bss", "data", "text" };
+
 
 extern void Error(const char*);
-extern void WriteHeaders(char*);
-extern void CompileSource(char*);
+extern void Error(const char*, unsigned long&);
+extern void fillNullUntil(std::ofstream&, int);
+extern void WriteHeaders(std::ofstream&);
+extern void CompileSource(char*, std::ofstream&);

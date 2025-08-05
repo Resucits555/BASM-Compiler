@@ -41,9 +41,10 @@ enum operandSizes : ushort {
 };
 
 struct opcodeParts_X86 {
-    ubyte po; //primary opcode
-    ubyte so; //secondary
-    ubyte o;  //extension
+    ubyte po = 0;   //primary opcode
+    ubyte OF = 0;   //0x0F = escape sequence
+    ubyte so = 0;   //secondary
+    sbyte o = -1;   //extension
 };
 
 union opcode_X86 {
@@ -102,19 +103,15 @@ const mnemonicOpcode_X86 opcodeTable[] = {
 
 
 struct argument {
-    uint64_t type = UINT64_MAX;
-    bool used = false;
-    size_t val = SIZE_MAX;
+    uint16_t type = 0;
+    uintmax_t val = 0;
 };
 
 
 
-struct operation {
+struct instruction {
     int8_t prefixes[4] = {};
     opcode_X86 opcode = {};
     int8_t modrm = 0;
     int8_t sib = 0;
-    argument arg1;
-    argument arg2;
-    argument arg3;
 };
