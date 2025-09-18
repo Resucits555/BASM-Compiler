@@ -1,19 +1,17 @@
 #include "main.h"
 
 
-const ubyte meaninglessExitCode = 166;
-
 void Error(const char* message) {
     std::cerr << "ERROR: " << message << '.';
 
-    exit(meaninglessExitCode);
+    exit(-1);
 }
 
 
 void Error(const char* message, unsigned long& line) {
     std::cerr << "ERROR: " << message << ". Line: " << line;
 
-    exit(meaninglessExitCode);
+    exit(-1);
 }
 
 

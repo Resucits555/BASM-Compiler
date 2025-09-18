@@ -57,7 +57,7 @@ inline static std::expected<ubyte, bool> DetectSection(std::string& inputLine, m
 
 
 inline static void GetArguments(std::string& inputLine, argument* args, mrx::substr& mnemonicPos) {
-    mrx::substr argPos = mrx::FindRgx(inputLine, "%d+", mnemonicPos.end());
+    mrx::substr argPos = mrx::FindRgx(inputLine, "%d+", mnemonicPos.end()).value();
 
     for (int argI = 0; argPos.a >= 0; ++argI) {
         argument& arg = args[argI];
@@ -82,7 +82,7 @@ inline static void GetArguments(std::string& inputLine, argument* args, mrx::sub
             arg.val = stoi(inputLine.substr(argPos.a, argPos.b));
         }
 
-        argPos = mrx::FindRgx(inputLine, "%d+", argPos.end() + 2);
+        argPos = mrx::FindRgx(inputLine, "%d+", argPos.end() + 2).value();
     }
 }
 
@@ -155,13 +155,13 @@ inline void CompileSource(char* sourceFilePath, std::ofstream& exeFile) {
         if (sourceFile.fail())
             Error("Failed to read source file");
         
-        sbyte nonSpace = mrx::FindRgx(inputLine, "%S", 0).a;
+        sbyte nonSpace = mrx::FindRgx(inputLine, "%S", 0).value().a;
 
         if (nonSpace < 0)
             continue;
 
         if (inputLine[nonSpace] == '.') {
-            auto newSection = DetectSection(inputLine, mrx::FindRgx(inputLine, "%a+", 1));
+            auto newSection = DetectSection(inputLine, mrx::FindRgx(inputLine, "%a+", 1).value());
             if (newSection)
                 section = newSection.value();
             else
@@ -171,9 +171,9 @@ inline void CompileSource(char* sourceFilePath, std::ofstream& exeFile) {
         
         
         mrx::substr operationPart;
-        operationPart.a = mrx::FindRgx(inputLine, "%a", 0).a;
+        operationPart.a = mrx::FindRgx(inputLine, "%a", 0).value().a;
 
-        ubyte end = mrx::FindRgx(inputLine, "%s+;", operationPart.a).a;
+        ubyte end = mrx::FindRgx(inputLine, "%s+;", operationPart.a).value().a;
         if (end < 0) {
             operationPart.b = UINT8_MAX;
         }
@@ -187,7 +187,7 @@ inline void CompileSource(char* sourceFilePath, std::ofstream& exeFile) {
         inputLine = inputLine.substr(operationPart.a, operationPart.b);
 
 
-        mrx::substr mnemonicPos = mrx::FindRgx(inputLine, "%a+", 0);
+        mrx::substr mnemonicPos = mrx::FindRgx(inputLine, "%a+", 0).value();
 
         argument args[3];
         GetArguments(inputLine, args, mnemonicPos);
