@@ -1,27 +1,32 @@
 #include <iostream>
 #include <string>
-#include <cstring>
 
 #include "mini-rgx.h"
 
 
-typedef unsigned char ubyte;
-typedef signed char sbyte;
-typedef unsigned short ushort;
-typedef unsigned long ulong;
+typedef std::uint_fast8_t ubyte;
+typedef std::int_fast8_t sbyte;
+typedef std::uint_fast16_t ushort;
+typedef std::uint_fast32_t ulong;
 
 
 namespace mrx {
-
-    bool InGroup(const char specifier, const char strChar) {
+    bool CharInGroup(char specifier, const char strChar) {
         const char alphabet[] = "etaoinshrdlcumwfgypbvkjxqzETAOINSHRDLCUMWFGYPBVKJXQZ";
         const char numbers[] = "0123456789";
         const char alphanum[] = "etaoinshrdlcumwfgypbvkjxqzETAOINSHRDLCUMWFGYPBVKJXQZ0123456789";
         const char spaces[] = " \t\v";
         const char punctuation[] = ".,:;";
-        const char groupSpecifiers[] = "adwsp.";
+        const char groupSpecifiers[] = "adwsp";
 
         const char* const groups[] = { alphabet, numbers, alphanum, spaces, punctuation, groupSpecifiers };
+
+        bool negate = false;
+        if (specifier >= 'A' && specifier <= 'Z') {
+            specifier += 0x20;
+            negate = true;
+        }
+
 
         ubyte groupI;
 
@@ -41,11 +46,9 @@ namespace mrx {
         case 'p':
             groupI = 4;
             break;
-        case 'g':
+        case '.':
             groupI = 5;
             break;
-        case '.':
-            return true;
         default:
             std::cerr << "mini-rgx.cpp, " << __LINE__ << ": Invalid specifier '" << std::to_string(specifier) << "'.";
             exit(-1);
@@ -55,23 +58,36 @@ namespace mrx {
 
         for (int i = 0; group[i] != 0; i++) {
             if (group[i] == strChar)
-                return true;
+                return !negate;
         }
 
-        return false;
+        return negate;
     }
 
 
 
 
 
-    std::optional<substr> FindRgx(const std::string str, const char* pattern, const size_t start) {
-        size_t strI = start - 1;
-        size_t strIstart = 0;
+    std::optional<unsigned long> FindCharOfGroup(const char group, const std::string str) {
+        for (ulong i = 0; str[i] != 0; i++) {
+            if (CharInGroup(group, str[i]))
+                return i;
+        }
 
-        const size_t patternLen = strlen(pattern);
-        const size_t strLen = str.length();
-        for (size_t patI = 0; patI < patternLen; ++patI) {
+        return std::nullopt;
+    }
+
+
+
+
+
+    std::optional<substr> FindRgx(const std::string str, const char* pattern, const unsigned short start) {
+        ushort strI = start - 1;
+        ushort strIstart = 0;
+
+        const ushort patternLen = strlen(pattern);
+        const ushort strLen = str.length();
+        for (ushort patI = 0; patI < patternLen; ++patI) {
             ++strI;
 
             if (!patI)
@@ -83,32 +99,34 @@ namespace mrx {
             if (pattern[patI] == '%') {
                 const char& specifier = pattern[++patI];
                 char group = pattern[patI];
-                bool negate = false;
-
-                if (specifier >= 'A' && specifier <= 'Z') {
-                    negate = true;
-                    group += 0x20;
-                }
 
 
                 if (specifier == '%')
                     goto charMatch;
-                else if (!InGroup('g', pattern[patI]))
+                else if (!CharInGroup('.', pattern[patI]))
                     continue;
 
 
                 switch (pattern[++patI]) {
                 case '+':
-                    if (!(!InGroup(group, str[strI]) != !negate)) { //basically XOR
+                    if (!CharInGroup(group, str[strI])) {
                         patI = -1;
                         break;
                     }
 
-                    while (strI < strLen && !(InGroup(group, str[strI + 1]) != !negate))
+                    while (strI < strLen && CharInGroup(group, str[strI + 1]))
+                        ++strI;
+                    break;
+                case '*':
+                    while (strI < strLen && CharInGroup(group, str[strI + 1]))
+                        ++strI;
+                    break;
+                case '?':
+                    if (CharInGroup(group, str[strI]))
                         ++strI;
                     break;
                 default:
-                    if (!(!InGroup(group, str[strI]) != !negate))
+                    if (!CharInGroup(group, str[strI]))
                         patI = 0;
                     --patI;
                 }
@@ -137,15 +155,37 @@ namespace mrx {
 
 
 
-    std::optional<unsigned char> FindRgxSectional(substr(&out_sections)[], const std::string str, const char* pattern, const char(&invalid)[]) {
-        size_t strI = -1;
-        size_t strIstart = 0;
+    std::optional<std::string> FindRgxSubstr(const std::string str, const char* pattern, const unsigned short start) {
+        auto sub = FindRgx(str, pattern, start);
+        if (!sub.has_value())
+            return std::nullopt;
+
+        return str.substr(sub.value().a, sub.value().b);
+    }
+
+
+
+    std::optional<const char*> FindRgxCSubstr(const std::string str, const char* pattern, const unsigned short start) {
+        auto sub = FindRgx(str, pattern, start);
+        if (!sub.has_value())
+            return std::nullopt;
+
+        return str.substr(sub.value().a, sub.value().b).c_str();
+    }
+
+
+
+
+
+    unsigned char FindRgxSectional(substr(&out_sections)[], const std::string str, const char* pattern, const char(&invalid)[]) {
+        ushort strI = -1;
+        ushort strIstart = 0;
 
         ubyte section = 1;
 
-        const size_t patternLen = strlen(pattern);
-        const size_t strLen = str.length();
-        for (size_t patI = 0; patI < patternLen; ++patI) {
+        const ushort patternLen = strlen(pattern);
+        const ushort strLen = str.length();
+        for (ushort patI = 0; patI < patternLen; ++patI) {
             ++strI;
             
             if (strI >= strLen)
@@ -161,24 +201,18 @@ namespace mrx {
             if (pattern[patI] == '%') {
                 const char& specifier = pattern[++patI];
                 char group = pattern[patI];
-                bool negate = false;
-
-                if (specifier >= 'A' && specifier <= 'Z') {
-                    negate = true;
-                    group += 0x20;
-                }
 
 
                 if (specifier == '%')
                     goto charMatch;
-                else if (!InGroup('g', pattern[patI])) {
-                    if (InGroup('d', specifier)) {
+                else if (!CharInGroup('.', pattern[patI])) {
+                    if (CharInGroup('d', specifier)) {
                         if (section)
                             out_sections[section - 1] = { strIstart, strI - strIstart };
 
                         char s[1] = { pattern[patI] };
                         section = std::stoi(s);
-                        
+
                         strIstart = strI;
                         --strI;
                     }
@@ -189,22 +223,22 @@ namespace mrx {
 
                 switch (pattern[++patI]) {
                 case '+':
-                    if (InGroup(group, str[strI]) == negate) // = Group XNOR negate
+                    if (!CharInGroup(group, str[strI]))
                         return section;
 
-                    while (strI < strLen && InGroup(group, str[strI + 1]) != negate) //XOR
+                    while (strI < strLen && CharInGroup(group, str[strI + 1]))
                         ++strI;
                     break;
                 case '*':
-                    while (strI < strLen && InGroup(group, str[strI + 1]) != negate)
+                    while (strI < strLen && CharInGroup(group, str[strI + 1]))
                         ++strI;
                     break;
                 case '?':
-                    if (InGroup(group, str[strI]) == negate)
-                        --strI;
+                    if (CharInGroup(group, str[strI]))
+                        ++strI;
                     break;
                 default:
-                    if (InGroup(group, str[strI]) == negate)
+                    if (!CharInGroup(group, str[strI]))
                         return section;
                     --patI;
                 }
@@ -220,13 +254,13 @@ namespace mrx {
                 ++patI;
             }
             else {
-                if (!(str[strI] == pattern[patI]))
+                if (!(str[strI] == pattern[patI]) && section)
                     return section;
             }
         }
 
         if (section)
             out_sections[section - 1] = { strIstart, ++strI - strIstart };
-        return {};
+        return 0;
     }
 }

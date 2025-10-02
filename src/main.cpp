@@ -1,18 +1,21 @@
+#include <filesystem>
+
 #include "main.h"
 
 
 void Error(const char* message) {
-    std::cerr << "ERROR: " << message << '.';
+    printf("ERROR: %s.", message);
 
     exit(-1);
 }
 
 
-void Error(const char* message, unsigned long& line) {
+void Error(const char* message, ulong& line) {
     std::cerr << "ERROR: " << message << ". Line: " << line;
 
     exit(-1);
 }
+
 
 
 
@@ -31,32 +34,30 @@ void fillNullUntil(std::ofstream& file, int until) {
 
 
 
-static std::string cutLastInPath(std::string path) {
-    ubyte end = path.length();
-    for (end; end > 0; end--) {
-        if (path[end] == '/')
-            break;
-    }
-    path = path.substr(0, end);
-    return path;
+
+static void ProcessArguments(fs::path srcPath, fs::path& exePath, const char* argv) {
+    exePath = srcPath.replace_extension("exe");
 }
 
 
 
 
-int main(int argc, char* argv[]) {
+int main(const int argc, const char* argv[]) {
     if (argc < 2)
         Error("Missing source path");
 
 
-    std::string exePath = cutLastInPath(argv[1]).append("/a.exe");
+    fs::path srcPath(argv[1]);
+    fs::path exePath;
+    ProcessArguments(srcPath, exePath, *argv);
+
 
     std::ofstream exeFile(exePath, std::ios::binary);
     if (!exeFile.is_open())
         Error("Failed to create executable file");
 
 
-    CompileSource(argv[1], exeFile);
+    CompileSource(srcPath, exeFile);
     WriteHeaders(exeFile);
 
     std::cout << "\nProgram successfully compiled!\n";

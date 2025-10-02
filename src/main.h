@@ -4,10 +4,12 @@
 #include <fstream>
 #include <expected>
 
-typedef unsigned char ubyte;
-typedef signed char sbyte;
-typedef unsigned short ushort;
-typedef unsigned long ulong;
+typedef std::uint_fast8_t ubyte;
+typedef std::int_fast8_t sbyte;
+typedef std::uint_fast16_t ushort;
+typedef std::uint_fast32_t ulong;
+
+namespace fs = std::filesystem;
 
 
 const ushort sectionAlignment = 0x1000;
@@ -19,7 +21,7 @@ const char sections[][8] = { "bss", "data", "text" };
 
 
 extern void Error(const char*);
-extern void Error(const char*, unsigned long&);
+extern void Error(const char*, ulong&);
 extern void fillNullUntil(std::ofstream&, int);
 extern void WriteHeaders(std::ofstream&);
-extern void CompileSource(char*, std::ofstream&);
+extern void CompileSource(const fs::path&, std::ofstream&);
