@@ -165,16 +165,6 @@ namespace mrx {
 
 
 
-    std::optional<const char*> FindRgxCSubstr(const std::string str, const char* pattern, const unsigned short start) {
-        auto sub = FindRgx(str, pattern, start);
-        if (!sub.has_value())
-            return std::nullopt;
-
-        return str.substr(sub.value().a, sub.value().b).c_str();
-    }
-
-
-
 
 
     unsigned char FindRgxSectional(substr(&out_sections)[], const std::string str, const char* pattern, const char(&invalid)[]) {

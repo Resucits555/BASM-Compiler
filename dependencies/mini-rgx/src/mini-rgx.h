@@ -24,9 +24,6 @@ namespace mrx {
     //Find a certain sequence of characters with a regex, returns the first matching substring as a string.
     extern std::optional<std::string> FindRgxSubstr(const std::string string, const char* pattern, const unsigned short start = 0);
 
-    //Find a certain sequence of characters with a regex, returns the first matching substring as a c string.
-    extern std::optional<const char*> FindRgxCSubstr(const std::string string, const char* pattern, const unsigned short start = 0);
-
     //FindRgx, with sections or "tokens". See the documentation for more.
     extern unsigned char FindRgxSectional(substr(&out_sections)[], const std::string str, const char* pattern, const char(&invalid)[] = "");
 }

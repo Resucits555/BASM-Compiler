@@ -11,7 +11,7 @@ struct opcodeParts_x86 {
 
 
 union opcode_x86 {
-    uint32_t full;
+    uint32_t full = 0;
     opcodeParts_x86 parts;
 };
 
@@ -19,7 +19,7 @@ union opcode_x86 {
 
 
 struct argument {
-    char type = 0;
+    char type = NULL;
     ubyte size = 0;
     bool negative = false;
     uintmax_t val = 0;
@@ -29,10 +29,11 @@ struct argument {
 
 
 struct instruction {
-    std::vector<ubyte> prefixes = {};
-    opcode_x86 opcode = {};
+    ubyte prefixes[4];
+    ubyte prefixesAmount = 0;
     ubyte modrm = 0;
     bool modrmUsed = false;
+    opcode_x86 opcode = {};
     ubyte sib = 0;
     bool sibUsed = false;
     ubyte dataSize = 0;

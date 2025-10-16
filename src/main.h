@@ -12,10 +12,10 @@ typedef std::uint_fast32_t ulong;
 namespace fs = std::filesystem;
 
 
-const ushort sectionAlignment = 0x1000;
+const double sectionAlignment = 0x1000;
 
 const double minHeadersSize = 0x500;
-const ulong baseOfCode = std::ceil(minHeadersSize / (double)sectionAlignment) * sectionAlignment;
+const ushort baseOfCode = std::ceil(minHeadersSize / sectionAlignment) * sectionAlignment;
 
 const char sections[][8] = { "bss", "data", "text" };
 

@@ -20,10 +20,10 @@ void Error(const char* message, ulong& line) {
 
 
 
-const ubyte nullsSize = 0x50;
-const char nulls[nullsSize] = "";
-
 void fillNullUntil(std::ofstream& file, int until) {
+    const ubyte nullsSize = 0x50;
+    const char nulls[nullsSize] = "";
+
     int toFill = until - file.tellp();
 
     for (toFill; toFill >= nullsSize; toFill -= nullsSize)
@@ -58,8 +58,11 @@ int main(const int argc, const char* argv[]) {
 
 
     CompileSource(srcPath, exeFile);
+    fillNullUntil(exeFile, std::ceil((double)exeFile.tellp() / sectionAlignment) * sectionAlignment);
+
     WriteHeaders(exeFile);
 
+    exeFile.close();
     std::cout << "\nProgram successfully compiled!\n";
 
     return 0;

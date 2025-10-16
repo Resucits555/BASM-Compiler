@@ -64,18 +64,20 @@ static std::optional<argument> FindRegisterRef(const char* string) {
 
 inline static void GetArguments(const char* inputLine, argument* args, ulong line) {
     char* tokenizedInput = (char*)malloc(strlen(inputLine) + 1);
-    strcpy(tokenizedInput, inputLine);
+    if (tokenizedInput == nullptr)
+        Error("\"malloc\" function failed");
+
+    strcpy(tokenizedInput, inputLine); //Visual Studio does not recognise exit() as a deadend function, aka computer dumb
 
     const char delimiters[] = " \t,.";
-    strtok(tokenizedInput, delimiters);
+    strtok(tokenizedInput, delimiters); //don't need the mnemonic
 
-    char* argstr = (char*)1;
+    char* argstr = strtok(nullptr, delimiters);
     for (sbyte i = 0; argstr != nullptr; i++) {
-        if (i >= 3)
+        if (i >= 2)
             Error("Invalid arguments", line);
 
         argument& arg = args[i];
-        argstr = strtok(nullptr, delimiters);
 
         if (!mrx::FindRgx(inputLine, "%D").has_value()) {
             arg.type = 'I';
@@ -85,11 +87,11 @@ inline static void GetArguments(const char* inputLine, argument* args, ulong lin
         }
         else {
             std::optional<argument> reg = FindRegisterRef(argstr);
-            if (reg.has_value()) {
+            if (reg.has_value())
                 arg = reg.value();
-                return;
-            }
         }
+
+        argstr = strtok(nullptr, delimiters);
     }
 
     free(tokenizedInput);
@@ -99,10 +101,96 @@ inline static void GetArguments(const char* inputLine, argument* args, ulong lin
 
 
 
-inline static instruction FindInstruction(const char* mnemonic, argument* args) {
+//Returns instruction data if it has fitting arguments and other criteria, otherwise returns null
+static std::optional<instruction> isFittingInstruction(const pugi::xml_node& entry, const argument* args, bool useSecOpcode) {
+    instruction instr;
+    ubyte* writeOpcode;
+    if (useSecOpcode)
+        writeOpcode = &instr.opcode.parts.so;
+    else
+        writeOpcode = &instr.opcode.parts.po;
 
 
-    return {};
+    *writeOpcode = std::stoi(entry.parent().first_attribute().value(), nullptr, 16);
+
+
+    ubyte textArgCounter = 0;
+    for (;textArgCounter < 2 && args[textArgCounter].type != NULL; textArgCounter++);
+
+
+    ubyte entryArgCounter = 0;
+    for (pugi::xml_node argNode = entry.first_child().child("dst"); argNode.type() != pugi::node_null; argNode = argNode.next_sibling()) {
+        char addressing[4] = "";
+        strcpy(addressing, argNode.first_child().child_value());
+
+        /*if (addressing[1] != NULL) {
+            
+        }*/
+
+        switch (args[entryArgCounter].type) {
+        case 'r': //register referencing addressing methods
+            if (addressing[1] != NULL || strpbrk(addressing, "EGHRZ") == nullptr)
+                return std::nullopt;
+        }
+
+        //has to be changed for argument types other than registers
+        switch (addressing[0]) {
+        case 'E':
+        case 'H':
+            instr.modrmUsed = true;
+            instr.modrm |= (0b11 << 6) | args[entryArgCounter].val;
+            break;
+        case 'G':
+            instr.modrmUsed = true;
+            instr.modrm |= args[entryArgCounter].val << 3;
+            break;
+        case 'R': //this could be wrong but that's how I understood the description of 'R'
+            instr.modrmUsed = true;
+            instr.modrm |= args[entryArgCounter].val << 6;
+            break;
+        case 'Z':
+            *writeOpcode += args[entryArgCounter].val;
+        }
+
+        entryArgCounter++;
+    }
+
+    if (textArgCounter != entryArgCounter)
+        return std::nullopt;
+
+    return instr;
+}
+
+
+
+
+inline static instruction FindInstruction(std::string& mnemonic, const argument* args, const pugi::xml_node& one_byte) {
+    for (int chr = 0; chr < mnemonic.size(); chr++)
+        mnemonic[chr] = std::toupper(mnemonic[chr]);
+
+    instruction bestInstrFound;
+    bool useSecondaryOpcode = false;
+
+    for (auto pri_opcd = one_byte.first_child(); pri_opcd.type() != pugi::node_null; pri_opcd = pri_opcd.next_sibling()) {
+        for (auto entry = pri_opcd.first_child(); entry.type() != pugi::node_null; entry = entry.next_sibling()) {
+            //PROBLEM: For some reason this if statement thinks "pop" and "mov" are the same
+            if (mnemonic == entry.child("syntax").first_child().child_value()) {
+                auto newInstruction = isFittingInstruction(entry, args, useSecondaryOpcode);
+                if (!newInstruction.has_value())
+                    continue;
+                bestInstrFound = newInstruction.value();
+                return bestInstrFound;
+            }
+        }
+
+        if (pri_opcd.first_attribute().as_int() == 0xFF) {
+            pri_opcd = one_byte.next_sibling().first_child();
+            bestInstrFound.opcode.parts.po = 0x0F;
+            useSecondaryOpcode = true;
+        }
+    }
+
+    return bestInstrFound;
 }
 
 
@@ -110,14 +198,18 @@ inline static instruction FindInstruction(const char* mnemonic, argument* args) 
 
 
 inline static void WriteToExe(std::ofstream& exeFile, instruction instr) {
-    for (ubyte prefix = 0; prefix < instr.prefixes.size(); prefix++)
-        exeFile.put(instr.prefixes[prefix]);
+    exeFile.write((char*)&instr.prefixes, instr.prefixesAmount);
 
     opcodeParts_x86& prs = instr.opcode.parts;
 
     exeFile.put(prs.po);
     if (prs.po == 0x0F)
         exeFile.put(prs.so);
+
+    if (instr.modrmUsed)
+        exeFile.put(instr.modrm);
+    if (instr.sibUsed)
+        exeFile.put(instr.sib);
     
     exeFile.write((char*)&instr.data, instr.dataSize);
 }
@@ -129,6 +221,10 @@ inline static void WriteToExe(std::ofstream& exeFile, instruction instr) {
 inline void CompileSource(const fs::path& srcPath, std::ofstream& exeFile) {
     std::ifstream sourceFile;
     sourceFile.open(srcPath);
+
+    pugi::xml_document x86reference;
+    x86reference.load_file("../data/x86reference-master/x86reference.xml");
+    pugi::xml_node one_byte = x86reference.first_child().first_child();
 
     if (!sourceFile.is_open())
         Error("Failed to open source file. Your path may be wrong. '/' and '\\' are treated the same");
@@ -166,8 +262,7 @@ inline void CompileSource(const fs::path& srcPath, std::ofstream& exeFile) {
         if (commentPos != std::string::npos)
             inputLine = inputLine.substr(0, commentPos--);
 
-        std::optional<const char*> mnemonic = mrx::FindRgxCSubstr(inputLine, "%a+");
-
+        std::optional<std::string> mnemonic = mrx::FindRgxSubstr(inputLine, "%a+");
         if (!mnemonic.has_value())
             Error("Invalid characters", line);
 
@@ -175,10 +270,13 @@ inline void CompileSource(const fs::path& srcPath, std::ofstream& exeFile) {
         argument args[2];
         GetArguments(inputLine.c_str(), args, line);
 
-        instr = FindInstruction(mnemonic.value(), args);
+        instr = FindInstruction(mnemonic.value(), args, one_byte);
 
         WriteToExe(exeFile, instr);
     }
+
+    const ubyte leaveInstruction = 0xC9;
+    exeFile.put(leaveInstruction);
 
     sourceFile.close();
 }
