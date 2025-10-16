@@ -16,8 +16,11 @@ const double sectionAlignment = 0x1000;
 
 const double minHeadersSize = 0x500;
 const ushort baseOfCode = std::ceil(minHeadersSize / sectionAlignment) * sectionAlignment;
+extern ulong sizeOfCode;
+extern ulong sizeOfImage;
 
-const char sections[][8] = { "bss", "data", "text" };
+//official max size for a section name is 8 chars
+const char sections[][9] = { "bss", "data", "text" };
 
 
 extern void Error(const char*);

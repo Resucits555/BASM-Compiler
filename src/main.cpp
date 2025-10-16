@@ -42,6 +42,9 @@ static void ProcessArguments(fs::path srcPath, fs::path& exePath, const char* ar
 
 
 
+ulong sizeOfCode;
+ulong sizeOfImage;
+
 int main(const int argc, const char* argv[]) {
     if (argc < 2)
         Error("Missing source path");
@@ -58,7 +61,9 @@ int main(const int argc, const char* argv[]) {
 
 
     CompileSource(srcPath, exeFile);
+    sizeOfCode = (ulong)exeFile.tellp() - (ulong)baseOfCode;
     fillNullUntil(exeFile, std::ceil((double)exeFile.tellp() / sectionAlignment) * sectionAlignment);
+    sizeOfImage = exeFile.tellp();
 
     WriteHeaders(exeFile);
 

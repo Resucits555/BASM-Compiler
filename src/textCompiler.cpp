@@ -277,6 +277,8 @@ inline void CompileSource(const fs::path& srcPath, std::ofstream& exeFile) {
 
     const ubyte leaveInstruction = 0xC9;
     exeFile.put(leaveInstruction);
+    const ubyte returnInstruction = 0xC3;
+    exeFile.put(returnInstruction);
 
     sourceFile.close();
 }
