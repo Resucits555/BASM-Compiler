@@ -35,8 +35,20 @@ void fillNullUntil(std::ofstream& file, int until) {
 
 
 
-static void ProcessArguments(fs::path srcPath, fs::path& exePath, const char* argv) {
-    exePath = srcPath.replace_extension("exe");
+static void ProcessArguments(fs::path& srcPath, fs::path& exePath, const ubyte argc, char** argv) {
+    for (ubyte argI = 1; argI < argc; argI++) {
+        char* arg = argv[argI];
+
+        if (arg[0] == '-') {
+            if (strcmp(arg, "-help") == 0) {
+                printf("Usage:\nbassemble <options> <src path>");
+                exit(0);
+            }
+        }
+    }
+    srcPath = argv[1];
+    exePath = srcPath;
+    exePath.replace_extension("exe");
 }
 
 
@@ -45,14 +57,13 @@ static void ProcessArguments(fs::path srcPath, fs::path& exePath, const char* ar
 ulong sizeOfCode;
 ulong sizeOfImage;
 
-int main(const int argc, const char* argv[]) {
+int main(const ubyte argc, char* argv[]) {
     if (argc < 2)
         Error("Missing source path");
 
-
-    fs::path srcPath(argv[1]);
+    fs::path srcPath;
     fs::path exePath;
-    ProcessArguments(srcPath, exePath, *argv);
+    ProcessArguments(srcPath, exePath, argc, argv);
 
 
     std::ofstream exeFile(exePath, std::ios::binary);
