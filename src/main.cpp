@@ -20,21 +20,6 @@ void Error(const char* message, ulong& line) {
 
 
 
-void fillNullUntil(std::ofstream& file, int until) {
-    const ubyte nullsSize = 0x50;
-    const char nulls[nullsSize] = "";
-
-    int toFill = until - file.tellp();
-
-    for (toFill; toFill >= nullsSize; toFill -= nullsSize)
-        file.write(nulls, nullsSize);
-    file.write(nulls, toFill);
-}
-
-
-
-
-
 static void ProcessArguments(fs::path srcPath, fs::path& exePath, const char* argv) {
     exePath = srcPath.replace_extension("exe");
 }
@@ -62,8 +47,7 @@ int main(const int argc, const char* argv[]) {
 
     CompileSource(srcPath, exeFile);
     sizeOfCode = (ulong)exeFile.tellp() - (ulong)baseOfCode;
-    fillNullUntil(exeFile, std::ceil((double)exeFile.tellp() / sectionAlignment) * sectionAlignment);
-    sizeOfImage = exeFile.tellp();
+    sizeOfImage = std::ceil((double)exeFile.tellp() / sectionAlignment) * sectionAlignment;
 
     WriteHeaders(exeFile);
 

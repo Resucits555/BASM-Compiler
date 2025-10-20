@@ -12,10 +12,9 @@ typedef std::uint_fast32_t ulong;
 namespace fs = std::filesystem;
 
 
-const double sectionAlignment = 0x1000;
+const double sectionAlignment = 0x2000;
 
-const double minHeadersSize = 0x500;
-const ushort baseOfCode = std::ceil(minHeadersSize / sectionAlignment) * sectionAlignment;
+const ulong baseOfCode = sectionAlignment;
 extern ulong sizeOfCode;
 extern ulong sizeOfImage;
 
@@ -25,6 +24,5 @@ const char sections[][9] = { "bss", "data", "text" };
 
 extern void Error(const char*);
 extern void Error(const char*, ulong&);
-extern void fillNullUntil(std::ofstream&, int);
 extern void WriteHeaders(std::ofstream&);
 extern void CompileSource(const fs::path&, std::ofstream&);

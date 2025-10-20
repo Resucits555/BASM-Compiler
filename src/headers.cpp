@@ -5,6 +5,7 @@
 
 const ulong e_lfanew = 0x80;
 const ushort optionalHeaderSize = 112;
+const double fileAlignment = 0x200;
 
 
 inline static void writeMZHeader(std::ofstream& exeFile) {
@@ -12,7 +13,7 @@ inline static void writeMZHeader(std::ofstream& exeFile) {
 
     exeFile.write("MZ", 2);
     exeFile.write((char*)&DOSData, sizeof(DOSData));
-    fillNullUntil(exeFile, 0x3C);
+    exeFile.seekp(0x3C);
     exeFile.write((char*)&e_lfanew, 4);
 }
 
@@ -45,7 +46,7 @@ struct PeHeader {
     uint16_t mCharacteristics = 0x0102;
 
     inline void write(std::ofstream& exeFile) const {
-        fillNullUntil(exeFile, e_lfanew);
+        exeFile.seekp(e_lfanew);
 
         exeFile.write((char*)&mMagic, 8);
 
@@ -59,6 +60,24 @@ struct PeHeader {
 
 
 
+
+enum pe_subsystem : ushort
+{
+    IMAGE_SUBSYSTEM_UNKNOWN = 0x0,
+    IMAGE_SUBSYSTEM_NATIVE = 0x1,
+    IMAGE_SUBSYSTEM_WINDOWS_GUI = 0x2,
+    IMAGE_SUBSYSTEM_WINDOWS_CUI = 0x3,
+    IMAGE_SUBSYSTEM_OS2_CUI = 0x5,
+    IMAGE_SUBSYSTEM_POSIX_CUI = 0x7,
+    IMAGE_SUBSYSTEM_NATIVE_WINDOWS = 0x8,
+    IMAGE_SUBSYSTEM_WINDOWS_CE_GUI = 0x9,
+    IMAGE_SUBSYSTEM_EFI_APPLICATION = 0xa,
+    IMAGE_SUBSYSTEM_EFI_BOOT_SERVICE_DRIVER = 0xb,
+    IMAGE_SUBSYSTEM_EFI_RUNTIME_DRIVER = 0xc,
+    IMAGE_SUBSYSTEM_EFI_ROM = 0xd,
+    IMAGE_SUBSYSTEM_XBOX = 0xe,
+    IMAGE_SUBSYSTEM_WINDOWS_BOOT_APPLICATION = 0x10
+};
 
 enum pe_dll_characteristics : ushort {
     IMAGE_DLLCHARACTERISTICS_0001 = 0x1,
@@ -79,8 +98,7 @@ enum pe_dll_characteristics : ushort {
 };
 
 struct Pe32PlusOptionalHeader {
-    //Some of these values have to be changed later
-    uint16_t mMagic = 0x010b;
+    uint16_t mMagic = 0x020b;
     uint8_t  mMajorLinkerVersion = 0;
     uint8_t  mMinorLinkerVersion = 0;
     uint32_t mSizeOfCode = sizeOfCode;
@@ -90,7 +108,7 @@ struct Pe32PlusOptionalHeader {
     uint32_t mBaseOfCode = baseOfCode;
     uint64_t mImageBase = 0x400000;
     uint32_t mSectionAlignment = sectionAlignment;
-    uint32_t mFileAlignment = 0x200;
+    uint32_t mFileAlignment = fileAlignment;
     uint16_t mMajorOperatingSystemVersion = 6;
     uint16_t mMinorOperatingSystemVersion = 0;
     uint16_t mMajorImageVersion = 0;
@@ -101,7 +119,7 @@ struct Pe32PlusOptionalHeader {
     uint32_t mSizeOfImage = sizeOfImage;
     uint32_t mSizeOfHeaders = 0x400;
     uint32_t mCheckSum = 0;
-    uint16_t mSubsystem = 3;
+    uint16_t mSubsystem = IMAGE_SUBSYSTEM_WINDOWS_CUI;
     uint16_t mDllCharacteristics = IMAGE_DLLCHARACTERISTICS_DYNAMIC_BASE | IMAGE_DLLCHARACTERISTICS_NX_COMPAT | IMAGE_DLLCHARACTERISTICS_TERMINAL_SERVER_AWARE;
     uint64_t mSizeOfStackReserve = 0x1000;
     uint64_t mSizeOfStackCommit = 0x100;
@@ -163,8 +181,8 @@ struct IMAGE_SECTION_HEADER {
 
 inline static void writeSectionHeader(std::ofstream& exeFile) {
     IMAGE_SECTION_HEADER text = {
-    ".text", std::ceil(sizeOfCode / sectionAlignment) * sectionAlignment,
-    baseOfCode, std::ceil(sizeOfCode / sectionAlignment) * sectionAlignment,
+    ".text", (uint32_t)(std::ceil(sizeOfCode / sectionAlignment) * sectionAlignment),
+    baseOfCode, (uint32_t)(std::ceil(sizeOfCode / sectionAlignment) * sectionAlignment),
     baseOfCode, 0,
     0, 0,
     0, IMAGE_SCN_CNT_CODE | IMAGE_SCN_MEM_EXECUTE | IMAGE_SCN_MEM_READ };
@@ -176,7 +194,7 @@ inline static void writeSectionHeader(std::ofstream& exeFile) {
 
 
 
-void WriteHeaders(std::ofstream& exeFile) {
+inline void WriteHeaders(std::ofstream& exeFile) {
     exeFile.seekp(0);
 
     writeMZHeader(exeFile);
@@ -187,6 +205,11 @@ void WriteHeaders(std::ofstream& exeFile) {
 
     Pe32PlusOptionalHeader OH;
     exeFile.write((char*)&OH, optionalHeaderSize);
+    const ushort mSizeOfHeadersLocation = (ushort)exeFile.tellp() - 52;
 
     writeSectionHeader(exeFile);
+
+    const ulong sizeOfHeaders = std::ceil((double)exeFile.tellp() / fileAlignment) * fileAlignment;
+    exeFile.seekp(mSizeOfHeadersLocation);
+    exeFile.write((char*)&sizeOfHeaders, 4);
 }
