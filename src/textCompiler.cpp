@@ -18,6 +18,21 @@ static ubyte minBitsToStore(uintmax_t value, bool negative) {
 
 
 
+static std::optional<ubyte> findStringInArray(const char* string, const char* array, ubyte arraySize, ubyte stringSize) {
+    for (ubyte stringI = 0; stringI < arraySize; stringI++) {
+        for (ubyte charI = 0; string[charI] == (array + (stringI * stringSize))[charI]; charI++) {
+            if ((array + (stringI * stringSize))[charI] == NULL) {
+                return stringI;
+            }
+        }
+    }
+    return std::nullopt;
+}
+
+
+
+
+
 inline static sbyte NewSection(std::string& inputLine) {
     inputLine = inputLine.substr(1, SIZE_MAX);
 
@@ -36,7 +51,7 @@ inline static sbyte NewSection(std::string& inputLine) {
 
 
 
-static std::optional<argument> FindRegisterRef(const char* string) {
+inline static void GetArguments(const char* inputLine, argument* args, ulong line) {
     const char registers[][6] = {
     "al", "cl", "dl", "bl", "ah", "ch", "dh", "bh", "r8l", "r9l", "r10l", "r11l", "r12l", "r13l", "r14l", "r15l",
     "ax", "cx", "dx", "bx", "sp", "bp", "si", "di", "r8w", "r9w", "r10w", "r11w", "r12w", "r13w", "r14w", "r15w",
@@ -49,20 +64,7 @@ static std::optional<argument> FindRegisterRef(const char* string) {
     "mmx0", "mmx1", "mmx2", "mmx3", "mmx4", "mmx5", "mmx6", "mmx7"*/
     };
 
-    for (ubyte stringI = 0; stringI < std::size(registers); stringI++) {
-        for (ubyte charI = 0; string[charI] == registers[stringI][charI]; charI++) {
-            if (registers[stringI][charI] == NULL) {
-                return argument('r', (ubyte)pow(2, stringI >> 4), false, (ubyte)(stringI % 16));
-            }
-        }
-    }
-    return std::nullopt;
-}
 
-
-
-
-inline static void GetArguments(const char* inputLine, argument* args, ulong line) {
     char* tokenizedInput = (char*)malloc(strlen(inputLine) + 1);
     if (tokenizedInput == nullptr)
         Error("\"malloc\" function failed");
@@ -83,12 +85,13 @@ inline static void GetArguments(const char* inputLine, argument* args, ulong lin
             arg.type = 'I';
             if (*argstr == '-')
                 arg.negative = true;
+            arg.variableSize = true;
             arg.val = std::stoull(argstr, nullptr, 0);
         }
         else {
-            std::optional<argument> reg = FindRegisterRef(argstr);
+            std::optional<ubyte> reg = findStringInArray(argstr, *registers, std::size(registers), 6);
             if (reg.has_value())
-                arg = reg.value();
+                arg = { 'r', false, (ubyte)pow(2, reg.value() >> 4), false, (ubyte)(reg.value() % 16) };
         }
 
         argstr = strtok(nullptr, delimiters);
@@ -102,17 +105,22 @@ inline static void GetArguments(const char* inputLine, argument* args, ulong lin
 
 
 //Returns instruction data if it has fitting arguments and other criteria, otherwise returns null
-static std::optional<instruction> isFittingInstruction(const pugi::xml_node& entry, const argument* args, bool useSecOpcode) {
+static std::optional<instruction> isFittingInstruction(const pugi::xml_node& entry, argument* args) {
+    const ubyte operandSizePrefix = 0x66;
+    const ubyte addressSizePrefix = 0x67;
+    enum REX : ubyte {
+        REX = 40,
+        REXB = 41,
+        REXX = 42,
+        REXR = 44,
+        REXW = 48
+    };
+
     instruction instr;
-    ubyte* writeOpcode;
-    if (useSecOpcode)
-        writeOpcode = &instr.opcode.parts.so;
-    else
-        writeOpcode = &instr.opcode.parts.po;
+    ubyte& po = instr.opcode[instr.primaryOpcodeIndex];
 
 
-    *writeOpcode = std::stoi(entry.parent().first_attribute().value(), nullptr, 16);
-
+    po = std::stoi(entry.parent().first_attribute().value(), nullptr, 16);
 
     ubyte textArgCounter = 0;
     for (;textArgCounter < 2 && args[textArgCounter].type != NULL; textArgCounter++);
@@ -120,37 +128,50 @@ static std::optional<instruction> isFittingInstruction(const pugi::xml_node& ent
 
     ubyte entryArgCounter = 0;
     for (pugi::xml_node argNode = entry.first_child().child("dst"); argNode.type() != pugi::node_null; argNode = argNode.next_sibling()) {
+        argument& textArg = args[entryArgCounter];
+
+        if (textArg.variableSize)
+            textArg.size = std::ceil((double)minBitsToStore(textArg.val, textArg.negative) / 8.);
+
         char addressing[4] = "";
         strcpy(addressing, argNode.first_child().child_value());
 
-        /*if (addressing[1] != NULL) {
-            
-        }*/
+        if (addressing[1] != NULL)
+            return std::nullopt;
 
-        switch (args[entryArgCounter].type) {
-        case 'r': //register referencing addressing methods
-            if (addressing[1] != NULL || strpbrk(addressing, "EGHRZ") == nullptr)
+        switch (textArg.type) {
+        case 'r':
+            switch (addressing[0]) {
+            case 'E':
+            case 'H':
+                instr.modrmUsed = true;
+                instr.modrm |= (0b11 << 6) | textArg.val;
+                break;
+            case 'G':
+                instr.modrmUsed = true;
+                instr.modrm |= textArg.val << 3;
+                break;
+            case 'R': //this could be wrong but that's how I understood the description of 'R'
+                instr.modrmUsed = true;
+                instr.modrm |= textArg.val << 6;
+                break;
+            case 'Z':
+                po += textArg.val;
+                break;
+            default:
                 return std::nullopt;
+            }
+            break;
+        case 'I':
+            instr.immediate = textArg.val;
+            instr.immediateSize = textArg.size;
         }
 
-        //has to be changed for argument types other than registers
-        switch (addressing[0]) {
-        case 'E':
-        case 'H':
-            instr.modrmUsed = true;
-            instr.modrm |= (0b11 << 6) | args[entryArgCounter].val;
-            break;
-        case 'G':
-            instr.modrmUsed = true;
-            instr.modrm |= args[entryArgCounter].val << 3;
-            break;
-        case 'R': //this could be wrong but that's how I understood the description of 'R'
-            instr.modrmUsed = true;
-            instr.modrm |= args[entryArgCounter].val << 6;
-            break;
-        case 'Z':
-            *writeOpcode += args[entryArgCounter].val;
-        }
+
+        char type[4] = "";
+        strcpy(type, argNode.first_child().next_sibling().child_value());
+
+
 
         entryArgCounter++;
     }
@@ -164,18 +185,16 @@ static std::optional<instruction> isFittingInstruction(const pugi::xml_node& ent
 
 
 
-inline static instruction FindInstruction(std::string& mnemonic, const argument* args, const pugi::xml_node& one_byte) {
+inline static instruction FindInstruction(std::string& mnemonic, argument* args, const pugi::xml_node& one_byte) {
     for (int chr = 0; chr < mnemonic.size(); chr++)
         mnemonic[chr] = std::toupper(mnemonic[chr]);
 
     instruction bestInstrFound;
-    bool useSecondaryOpcode = false;
 
     for (auto pri_opcd = one_byte.first_child(); pri_opcd.type() != pugi::node_null; pri_opcd = pri_opcd.next_sibling()) {
         for (auto entry = pri_opcd.first_child(); entry.type() != pugi::node_null; entry = entry.next_sibling()) {
-            //PROBLEM: For some reason this if statement thinks "pop" and "mov" are the same
             if (mnemonic == entry.child("syntax").first_child().child_value()) {
-                auto newInstruction = isFittingInstruction(entry, args, useSecondaryOpcode);
+                auto newInstruction = isFittingInstruction(entry, args);
                 if (!newInstruction.has_value())
                     continue;
                 bestInstrFound = newInstruction.value();
@@ -185,8 +204,8 @@ inline static instruction FindInstruction(std::string& mnemonic, const argument*
 
         if (pri_opcd.first_attribute().as_int() == 0xFF) {
             pri_opcd = one_byte.next_sibling().first_child();
-            bestInstrFound.opcode.parts.po = 0x0F;
-            useSecondaryOpcode = true;
+            bestInstrFound.opcode[0] = 0x0F;
+            bestInstrFound.primaryOpcodeIndex++;
         }
     }
 
@@ -198,13 +217,9 @@ inline static instruction FindInstruction(std::string& mnemonic, const argument*
 
 
 inline static void WriteToExe(std::ofstream& exeFile, instruction instr) {
-    exeFile.write((char*)&instr.prefixes, instr.prefixesAmount);
+    exeFile.write((char*)&instr.prefixes, instr.lastPrefixIndex + 1);
 
-    opcodeParts_x86& prs = instr.opcode.parts;
-
-    exeFile.put(prs.po);
-    if (prs.po == 0x0F)
-        exeFile.put(prs.so);
+    exeFile.write((char*)&instr.opcode, instr.primaryOpcodeIndex + 1);
 
     if (instr.modrmUsed)
         exeFile.put(instr.modrm);
@@ -212,6 +227,7 @@ inline static void WriteToExe(std::ofstream& exeFile, instruction instr) {
         exeFile.put(instr.sib);
     
     exeFile.write((char*)&instr.data, instr.dataSize);
+    exeFile.write((char*)&instr.immediate, instr.immediateSize);
 }
 
 
@@ -219,6 +235,8 @@ inline static void WriteToExe(std::ofstream& exeFile, instruction instr) {
 
 
 inline void CompileSource(const fs::path& srcPath, std::ofstream& exeFile) {
+    exeFile.seekp(baseOfCode);
+
     std::ifstream sourceFile;
     sourceFile.open(srcPath);
 
@@ -229,8 +247,6 @@ inline void CompileSource(const fs::path& srcPath, std::ofstream& exeFile) {
     if (!sourceFile.is_open())
         Error("Failed to open source file. Your path may be wrong. '/' and '\\' are treated the same");
 
-
-    exeFile.seekp(baseOfCode);
 
     ubyte section = UINT8_MAX;
     ulong line = 0;
@@ -271,6 +287,8 @@ inline void CompileSource(const fs::path& srcPath, std::ofstream& exeFile) {
         GetArguments(inputLine.c_str(), args, line);
 
         instr = FindInstruction(mnemonic.value(), args, one_byte);
+        if (instr.dataSize + instr.immediateSize > 8)
+            Error("Compiler bug: Sum of disp and imm sizes is more than 8 bytes. Please report this bug to the creators of this compiler", line);
 
         WriteToExe(exeFile, instr);
     }
