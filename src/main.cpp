@@ -41,7 +41,8 @@ static void ProcessArguments(fs::path& srcPath, fs::path& exePath, const ubyte a
 
         if (arg[0] == '-') {
             if (strcmp(arg, "-help") == 0) {
-                printf("Usage:\nbassemble <options> <src path>");
+                printf("Usage:\nbassemble [<options>] <src path>\n\nThe compiled executable will be created in the same directory as the source, with the same name\n\n");
+                printf("Possible arguments:\nhelp - Displays this message\n\n");
                 exit(0);
             }
         }
