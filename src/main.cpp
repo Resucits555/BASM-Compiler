@@ -20,7 +20,7 @@ void Error(const char* message, ulong& line) {
 
 
 
-static void ProcessArguments(fs::path srcPath, fs::path& exePath, const ubyte argc, char** argv) {
+static void ProcessArguments(fs::path& srcPath, fs::path& exePath, const ubyte argc, char** argv) {
     for (ubyte argI = 1; argI < argc; argI++) {
         char* arg = argv[argI];
 
