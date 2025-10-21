@@ -20,8 +20,21 @@ void Error(const char* message, ulong& line) {
 
 
 
-static void ProcessArguments(fs::path srcPath, fs::path& exePath, const char* argv) {
-    exePath = srcPath.replace_extension("exe");
+static void ProcessArguments(fs::path srcPath, fs::path& exePath, const ubyte argc, char** argv) {
+    for (ubyte argI = 1; argI < argc; argI++) {
+        char* arg = argv[argI];
+
+        if (arg[0] == '-') {
+            if (strcmp(arg, "-help") == 0) {
+                printf("Usage:\nbassemble [<options>] <src path>\n\nThe compiled executable will be created in the same directory as the source, with the same name\n\n");
+                printf("Possible arguments:\nhelp - Displays this message\n\n");
+                exit(0);
+            }
+        }
+    }
+    srcPath = argv[1];
+    exePath = srcPath;
+    exePath.replace_extension("exe");
 }
 
 
