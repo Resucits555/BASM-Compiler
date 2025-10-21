@@ -30,14 +30,13 @@ static void ProcessArguments(fs::path srcPath, fs::path& exePath, const char* ar
 ulong sizeOfCode;
 ulong sizeOfImage;
 
-int main(const int argc, const char* argv[]) {
+int main(const ubyte argc, char* argv[]) {
     if (argc < 2)
         Error("Missing source path");
 
-
-    fs::path srcPath(argv[1]);
+    fs::path srcPath;
     fs::path exePath;
-    ProcessArguments(srcPath, exePath, *argv);
+    ProcessArguments(srcPath, exePath, argc, argv);
 
 
     std::ofstream exeFile(exePath, std::ios::binary);
