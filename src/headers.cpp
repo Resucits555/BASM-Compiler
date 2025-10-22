@@ -4,7 +4,7 @@
 
 
 const ulong e_lfanew = 0x80;
-const ushort optionalHeaderSize = 112;
+const ushort optionalHeaderSize = 96;
 const double fileAlignment = 0x200;
 
 
@@ -97,8 +97,8 @@ enum pe_dll_characteristics : ushort {
     IMAGE_DLLCHARACTERISTICS_TERMINAL_SERVER_AWARE = 0x8000
 };
 
-struct Pe32PlusOptionalHeader {
-    uint16_t mMagic = 0x020b;
+struct Pe32OptionalHeader {
+    uint16_t mMagic = 0x010b;
     uint8_t  mMajorLinkerVersion = 0;
     uint8_t  mMinorLinkerVersion = 0;
     uint32_t mSizeOfCode = sizeOfCode;
@@ -106,7 +106,8 @@ struct Pe32PlusOptionalHeader {
     uint32_t mSizeOfUninitializedData = 0;
     uint32_t mAddressOfEntryPoint = baseOfCode;
     uint32_t mBaseOfCode = baseOfCode;
-    uint64_t mImageBase = 0x400000;
+    uint32_t mBaseOfData = 0;
+    uint32_t mImageBase = 0x400000;
     uint32_t mSectionAlignment = sectionAlignment;
     uint32_t mFileAlignment = fileAlignment;
     uint16_t mMajorOperatingSystemVersion = 6;
@@ -117,16 +118,16 @@ struct Pe32PlusOptionalHeader {
     uint16_t mMinorSubsystemVersion = 0;
     uint32_t mWin32VersionValue = 0;
     uint32_t mSizeOfImage = sizeOfImage;
-    uint32_t mSizeOfHeaders = 0x400;
+    uint32_t mSizeOfHeaders = 0;
     uint32_t mCheckSum = 0;
     uint16_t mSubsystem = IMAGE_SUBSYSTEM_WINDOWS_CUI;
     uint16_t mDllCharacteristics = IMAGE_DLLCHARACTERISTICS_DYNAMIC_BASE | IMAGE_DLLCHARACTERISTICS_NX_COMPAT | IMAGE_DLLCHARACTERISTICS_TERMINAL_SERVER_AWARE;
-    uint64_t mSizeOfStackReserve = 0x1000;
-    uint64_t mSizeOfStackCommit = 0x100;
-    uint64_t mSizeOfHeapReserve = 0x1000;
-    uint64_t mSizeOfHeapCommit = 0x100;
+    uint32_t mSizeOfStackReserve = 0x1000;
+    uint32_t mSizeOfStackCommit = 0x100;
+    uint32_t mSizeOfHeapReserve = 0x1000;
+    uint32_t mSizeOfHeapCommit = 0x100;
     uint32_t mLoaderFlags = 0;
-    uint32_t mNumberOfRvaAndSizes = 0x0;
+    uint32_t mNumberOfRvaAndSizes = 0;
 };
 
 
@@ -181,9 +182,9 @@ struct IMAGE_SECTION_HEADER {
 
 inline static void writeSectionHeader(std::ofstream& exeFile) {
     IMAGE_SECTION_HEADER text = {
-    ".text", (uint32_t)(std::ceil(sizeOfCode / sectionAlignment) * sectionAlignment),
-    baseOfCode, (uint32_t)(std::ceil(sizeOfCode / sectionAlignment) * sectionAlignment),
-    baseOfCode, 0,
+    ".text", sizeOfCode,
+    baseOfCode, (uint32_t)(std::ceil(sizeOfCode / fileAlignment) * fileAlignment),
+    (uint32_t)(std::ceil(sizeOfCode / fileAlignment) * fileAlignment), 0,
     0, 0,
     0, IMAGE_SCN_CNT_CODE | IMAGE_SCN_MEM_EXECUTE | IMAGE_SCN_MEM_READ };
 
@@ -203,9 +204,9 @@ inline void WriteHeaders(std::ofstream& exeFile) {
     PeHeader COFF;
     COFF.write(exeFile);
 
-    Pe32PlusOptionalHeader OH;
+    Pe32OptionalHeader OH;
     exeFile.write((char*)&OH, optionalHeaderSize);
-    const ushort mSizeOfHeadersLocation = (ushort)exeFile.tellp() - 52;
+    const ushort mSizeOfHeadersLocation = (ushort)exeFile.tellp() - 36; //52 for PE32+
 
     writeSectionHeader(exeFile);
 
