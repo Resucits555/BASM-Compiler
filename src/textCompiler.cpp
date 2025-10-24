@@ -18,7 +18,7 @@ static ubyte minBitsToStore(uintmax_t value, bool negative) {
 
 
 
-static std::optional<ubyte> findStringInArray(const char* string, const char* array, ubyte arraySize, ubyte stringSize) {
+static std::optional<ubyte> findStringInArray(const char* string, const char* array, ushort arraySize, ubyte stringSize) {
     for (ubyte stringI = 0; stringI < arraySize; stringI++) {
         for (ubyte charI = 0; string[charI] == (array + (stringI * stringSize))[charI]; charI++) {
             if ((array + (stringI * stringSize))[charI] == NULL) {
@@ -52,7 +52,7 @@ inline static sbyte NewSection(std::string& inputLine) {
 
 
 inline static void GetArguments(const char* inputLine, argument* args, ulong line) {
-    const char registers[][6] = {
+    constexpr char registers[][6] = {
     "al", "cl", "dl", "bl", "ah", "ch", "dh", "bh", "r8l", "r9l", "r10l", "r11l", "r12l", "r13l", "r14l", "r15l",
     "ax", "cx", "dx", "bx", "sp", "bp", "si", "di", "r8w", "r9w", "r10w", "r11w", "r12w", "r13w", "r14w", "r15w",
     "eax", "ecx", "edx", "ebx", "esp", "ebp", "esi", "edi", "r8d", "r9d", "r10d", "r11d", "r12d", "r13d", "r14d", "r15d",
@@ -74,14 +74,14 @@ inline static void GetArguments(const char* inputLine, argument* args, ulong lin
     const char delimiters[] = " \t,.";
     strtok(tokenizedInput, delimiters); //don't need the mnemonic
 
-    char* argstr = strtok(nullptr, delimiters);
+    const char* argstr = strtok(nullptr, delimiters);
     for (sbyte i = 0; argstr != nullptr; i++) {
         if (i >= 2)
             Error("Invalid arguments", line);
 
         argument& arg = args[i];
 
-        if (!mrx::FindRgx(inputLine, "%D").has_value()) {
+        if (!mrx::FindRgx(argstr, "%D").has_value()) {
             arg.type = 'I';
             if (*argstr == '-')
                 arg.negative = true;
@@ -89,9 +89,9 @@ inline static void GetArguments(const char* inputLine, argument* args, ulong lin
             arg.val = std::stoull(argstr, nullptr, 0);
         }
         else {
-            std::optional<ubyte> reg = findStringInArray(argstr, *registers, std::size(registers), 6);
+            std::optional<ubyte> reg = findStringInArray(argstr, *registers, sizeof(registers) / sizeof(*registers), sizeof(*registers));
             if (reg.has_value())
-                arg = { 'r', false, (ubyte)pow(2, reg.value() >> 4), false, (ubyte)(reg.value() % 16) };
+                arg = { 'r', false, (ubyte)(pow(2, reg.value() >> 4) * 8), false, (ubyte)(reg.value() % 16) };
         }
 
         argstr = strtok(nullptr, delimiters);
@@ -105,33 +105,33 @@ inline static void GetArguments(const char* inputLine, argument* args, ulong lin
 
 
 //Returns instruction data if it has fitting arguments and other criteria, otherwise returns null
-static std::optional<instruction> isFittingInstruction(const pugi::xml_node& entry, argument* args) {
-    const ubyte operandSizePrefix = 0x66;
-    const ubyte addressSizePrefix = 0x67;
-    enum REX : ubyte {
-        REX = 40,
-        REXB = 41,
-        REXX = 42,
-        REXR = 44,
-        REXW = 48
+static std::optional<instruction> isFittingInstruction(const pugi::xml_node& entry, argument* args, ulong& line) {
+    constexpr ubyte operandSizePrefix = 0x66;
+    constexpr ubyte addressSizePrefix = 0x67;
+    struct REX {
+        const ubyte _ = 0x40; const ubyte B = 0x41; const ubyte X = 0x42; const ubyte R = 0x44; const ubyte W = 0x48;
     };
+    constexpr REX REX;
 
     instruction instr;
+    if (strcmp(entry.parent().parent().name(), "two-byte") == 0) {
+        std::cout << entry.parent().parent().name();
+        instr.opcode[0] = 0x0F;
+        instr.primaryOpcodeIndex++;
+    }
+
     ubyte& po = instr.opcode[instr.primaryOpcodeIndex];
 
-
     po = std::stoi(entry.parent().first_attribute().value(), nullptr, 16);
-
+    
     ubyte textArgCounter = 0;
     for (;textArgCounter < 2 && args[textArgCounter].type != NULL; textArgCounter++);
 
 
     ubyte entryArgCounter = 0;
-    for (pugi::xml_node argNode = entry.first_child().child("dst"); argNode.type() != pugi::node_null; argNode = argNode.next_sibling()) {
+    for (pugi::xml_node argNode = entry.first_child().first_child().next_sibling(); argNode.type() != pugi::node_null; argNode = argNode.next_sibling()) {
         argument& textArg = args[entryArgCounter];
 
-        if (textArg.variableSize)
-            textArg.size = std::ceil((double)minBitsToStore(textArg.val, textArg.negative) / 8.);
 
         char addressing[4] = "";
         strcpy(addressing, argNode.first_child().child_value());
@@ -151,7 +151,7 @@ static std::optional<instruction> isFittingInstruction(const pugi::xml_node& ent
                 instr.modrmUsed = true;
                 instr.modrm |= textArg.val << 3;
                 break;
-            case 'R': //this could be wrong but that's how I understood the description of 'R'
+            case 'R': //this could be wrong but that's how I understood the description of 'R' (using the mod part to reference register)
                 instr.modrmUsed = true;
                 instr.modrm |= textArg.val << 6;
                 break;
@@ -163,15 +163,42 @@ static std::optional<instruction> isFittingInstruction(const pugi::xml_node& ent
             }
             break;
         case 'I':
+            if (addressing[0] != 'I')
+                return std::nullopt;
+            if (textArg.variableSize)
+                textArg.size = args[~entryArgCounter & 1].size;
+
             instr.immediate = textArg.val;
-            instr.immediateSize = textArg.size;
+            instr.immediateSize = textArg.size / 8;
         }
 
 
         char type[4] = "";
         strcpy(type, argNode.first_child().next_sibling().child_value());
 
+        const ubyte arrayI = log2(textArg.size / 8);
+        if (arrayI == 3 && !long64bitMode)
+            Error("Invalid instruction in 32bit mode", line);
 
+        const std::optional<ubyte> operandI = findStringInArray(type, operands[arrayI], arraySizes[arrayI], 4);
+        if (!operandI.has_value())
+            return std::nullopt;
+
+        const ubyte requirement = reqArrays[arrayI][operandI.value()];
+
+        if (requirement) {
+            constexpr ubyte prefixValues[3] = {operandSizePrefix, addressSizePrefix, REX.W};
+            for (ubyte reqI = 1; reqI < NOSHRINK; reqI++) {
+                if ((requirement & 0x7) == reqI && std::find(instr.prefixes, instr.prefixes + 4, prefixValues[reqI - 1]) == instr.prefixes + 4)
+                    instr.prefixes[instr.lastPrefixIndex++] = prefixValues[reqI - 1];
+            }
+
+            if ((requirement & 0x7) == NOSHRINK) {
+                if (std::find(instr.prefixes, instr.prefixes + 4, operandSizePrefix) != instr.prefixes + 4
+                    || std::find(instr.prefixes, instr.prefixes + 4, addressSizePrefix) != instr.prefixes + 4)
+                    return std::nullopt;
+            }
+        }
 
         entryArgCounter++;
     }
@@ -185,31 +212,31 @@ static std::optional<instruction> isFittingInstruction(const pugi::xml_node& ent
 
 
 
-inline static instruction FindInstruction(std::string& mnemonic, argument* args, const pugi::xml_node& one_byte) {
-    for (int chr = 0; chr < mnemonic.size(); chr++)
+inline static instruction FindInstruction(std::string& mnemonic, argument* args, const pugi::xml_node& one_byte, ulong& line) {
+    for (ubyte chr = 0; chr < mnemonic.size(); chr++)
         mnemonic[chr] = std::toupper(mnemonic[chr]);
 
-    instruction bestInstrFound;
+    std::optional<instruction> bestInstrFound;
 
     for (auto pri_opcd = one_byte.first_child(); pri_opcd.type() != pugi::node_null; pri_opcd = pri_opcd.next_sibling()) {
         for (auto entry = pri_opcd.first_child(); entry.type() != pugi::node_null; entry = entry.next_sibling()) {
             if (mnemonic == entry.child("syntax").first_child().child_value()) {
-                auto newInstruction = isFittingInstruction(entry, args);
+                auto newInstruction = isFittingInstruction(entry, args, line);
                 if (!newInstruction.has_value())
                     continue;
                 bestInstrFound = newInstruction.value();
-                return bestInstrFound;
+                return bestInstrFound.value();
             }
         }
 
-        if (pri_opcd.first_attribute().as_int() == 0xFF) {
-            pri_opcd = one_byte.next_sibling().first_child();
-            bestInstrFound.opcode[0] = 0x0F;
-            bestInstrFound.primaryOpcodeIndex++;
-        }
+        /*if (pri_opcd.first_attribute().as_int() == 0xFF)
+            pri_opcd = one_byte.next_sibling().first_child();*/
     }
 
-    return bestInstrFound;
+    if (!bestInstrFound.has_value())
+        Error("No fitting opcode found. Check the instruction's arguments, one of them could be too big or too small, or just invalid for this instruction", line);
+
+    return bestInstrFound.value();
 }
 
 
@@ -217,7 +244,7 @@ inline static instruction FindInstruction(std::string& mnemonic, argument* args,
 
 
 inline static void WriteToExe(std::ofstream& exeFile, instruction instr) {
-    exeFile.write((char*)&instr.prefixes, instr.lastPrefixIndex + 1);
+    exeFile.write((char*)&instr.prefixes, instr.lastPrefixIndex);
 
     exeFile.write((char*)&instr.opcode, instr.primaryOpcodeIndex + 1);
 
@@ -235,7 +262,7 @@ inline static void WriteToExe(std::ofstream& exeFile, instruction instr) {
 
 
 inline void CompileSource(const fs::path& srcPath, std::ofstream& exeFile) {
-    exeFile.seekp(baseOfCode);
+    exeFile.seekp(headerSize);
 
     std::ifstream sourceFile;
     sourceFile.open(srcPath);
@@ -286,17 +313,17 @@ inline void CompileSource(const fs::path& srcPath, std::ofstream& exeFile) {
         argument args[2];
         GetArguments(inputLine.c_str(), args, line);
 
-        instr = FindInstruction(mnemonic.value(), args, one_byte);
+        instr = FindInstruction(mnemonic.value(), args, one_byte, line);
         if (instr.dataSize + instr.immediateSize > 8)
-            Error("Compiler bug: Sum of disp and imm sizes is more than 8 bytes. Please report this bug to the creators of this compiler", line);
+            CompilerError("Sum of disp and imm sizes is more than 8 bytes", line);
 
         WriteToExe(exeFile, instr);
     }
 
-    const ubyte leaveInstruction = 0xC9;
-    exeFile.put(leaveInstruction);
-    const ubyte returnInstruction = 0xC3;
-    exeFile.put(returnInstruction);
-
     sourceFile.close();
+
+    constexpr ubyte leaveInstruction = 0xC9;
+    exeFile.put(leaveInstruction);
+    constexpr ubyte returnInstruction = 0xC3;
+    exeFile.put(returnInstruction);
 }

@@ -5,14 +5,17 @@
 
 const ulong e_lfanew = 0x80;
 const ushort optionalHeaderSize = 96;
-const double fileAlignment = 0x200;
 
 
 inline static void writeMZHeader(std::ofstream& exeFile) {
-    const uint16_t DOSData[] = { 0,1,0,4,0,0xFFFF };
-
     exeFile.write("MZ", 2);
-    exeFile.write((char*)&DOSData, sizeof(DOSData));
+    exeFile.seekp(4);
+    ulong sizeOfImagePages = roundUp(sizeOfImage, sectionAlignment) / 512;
+    exeFile.write((char*)&sizeOfImagePages, 2);
+    exeFile.seekp(0x08);
+    exeFile.write((char*)&headerSize, 2);
+    exeFile.seekp(0x0C);
+    exeFile.write("\xFF\xFF", 2);
     exeFile.seekp(0x3C);
     exeFile.write((char*)&e_lfanew, 4);
 }
@@ -35,6 +38,25 @@ inline static void writeDOSStub(std::ofstream& exeFile) {
 
 
 
+enum coff_characteristics : uint16_t
+{
+    IMAGE_FILE_RELOCS_STRIPPED = 0x1,
+    IMAGE_FILE_EXECUTABLE_IMAGE = 0x2,
+    IMAGE_FILE_LINE_NUMS_STRIPPED = 0x4,
+    IMAGE_FILE_LOCAL_SYMS_STRIPPED = 0x8,
+    IMAGE_FILE_AGGRESIVE_WS_TRIM = 0x10,
+    IMAGE_FILE_LARGE_ADDRESS_AWARE = 0x20,
+    IMAGE_FILE_BYTES_REVERSED_LO = 0x80,
+    IMAGE_FILE_32BIT_MACHINE = 0x100,
+    IMAGE_FILE_DEBUG_STRIPPED = 0x200,
+    IMAGE_FILE_REMOVABLE_RUN_FROM_SWAP = 0x400,
+    IMAGE_FILE_NET_RUN_FROM_SWAP = 0x800,
+    IMAGE_FILE_SYSTEM = 0x1000,
+    IMAGE_FILE_DLL = 0x2000,
+    IMAGE_FILE_UP_SYSTEM_ONLY = 0x4000,
+    IMAGE_FILE_BYTES_REVERSED_HI = 0x8000
+};
+
 struct PeHeader {
     uint32_t mMagic = 0x00004550;
     uint16_t mMachine = 0x14C;
@@ -43,7 +65,8 @@ struct PeHeader {
     uint32_t mPointerToSymbolTable = 0;
     uint32_t mNumberOfSymbols = 0;
     uint16_t mSizeOfOptionalHeader = optionalHeaderSize;
-    uint16_t mCharacteristics = 0x0102;
+    uint16_t mCharacteristics = IMAGE_FILE_RELOCS_STRIPPED | IMAGE_FILE_EXECUTABLE_IMAGE
+        | IMAGE_FILE_LINE_NUMS_STRIPPED | IMAGE_FILE_LOCAL_SYMS_STRIPPED | IMAGE_FILE_32BIT_MACHINE;
 
     inline void write(std::ofstream& exeFile) const {
         exeFile.seekp(e_lfanew);
@@ -79,29 +102,11 @@ enum pe_subsystem : ushort
     IMAGE_SUBSYSTEM_WINDOWS_BOOT_APPLICATION = 0x10
 };
 
-enum pe_dll_characteristics : ushort {
-    IMAGE_DLLCHARACTERISTICS_0001 = 0x1,
-    IMAGE_DLLCHARACTERISTICS_0002 = 0x2,
-    IMAGE_DLLCHARACTERISTICS_0004 = 0x4,
-    IMAGE_DLLCHARACTERISTICS_0008 = 0x8,
-    IMAGE_DLLCHARACTERISTICS_HIGH_ENTROPY_VA = 0x20,
-    IMAGE_DLLCHARACTERISTICS_DYNAMIC_BASE = 0x40,
-    IMAGE_DLLCHARACTERISTICS_FORCE_INTEGRITY = 0x80,
-    IMAGE_DLLCHARACTERISTICS_NX_COMPAT = 0x100,
-    IMAGE_DLLCHARACTERISTICS_NO_ISOLATION = 0x200,
-    IMAGE_DLLCHARACTERISTICS_NO_SEH = 0x400,
-    IMAGE_DLLCHARACTERISTICS_NO_BIND = 0x800,
-    IMAGE_DLLCHARACTERISTICS_APPCONTAINER = 0x1000,
-    IMAGE_DLLCHARACTERISTICS_WDM_DRIVER = 0x2000,
-    IMAGE_DLLCHARACTERISTICS_GUARD_CF = 0x4000,
-    IMAGE_DLLCHARACTERISTICS_TERMINAL_SERVER_AWARE = 0x8000
-};
-
 struct Pe32OptionalHeader {
     uint16_t mMagic = 0x010b;
     uint8_t  mMajorLinkerVersion = 0;
     uint8_t  mMinorLinkerVersion = 0;
-    uint32_t mSizeOfCode = sizeOfCode;
+    uint32_t mSizeOfCode = roundUp(sizeOfCode, fileAlignment);
     uint32_t mSizeOfInitializedData = 0;
     uint32_t mSizeOfUninitializedData = 0;
     uint32_t mAddressOfEntryPoint = baseOfCode;
@@ -110,22 +115,22 @@ struct Pe32OptionalHeader {
     uint32_t mImageBase = 0x400000;
     uint32_t mSectionAlignment = sectionAlignment;
     uint32_t mFileAlignment = fileAlignment;
-    uint16_t mMajorOperatingSystemVersion = 6;
+    uint16_t mMajorOperatingSystemVersion = 4;
     uint16_t mMinorOperatingSystemVersion = 0;
     uint16_t mMajorImageVersion = 0;
     uint16_t mMinorImageVersion = 0;
-    uint16_t mMajorSubsystemVersion = 6;
+    uint16_t mMajorSubsystemVersion = 4;
     uint16_t mMinorSubsystemVersion = 0;
     uint32_t mWin32VersionValue = 0;
-    uint32_t mSizeOfImage = sizeOfImage;
-    uint32_t mSizeOfHeaders = 0;
+    uint32_t mSizeOfImage = 0x4000;
+    uint32_t mSizeOfHeaders = headerSize;
     uint32_t mCheckSum = 0;
     uint16_t mSubsystem = IMAGE_SUBSYSTEM_WINDOWS_CUI;
-    uint16_t mDllCharacteristics = IMAGE_DLLCHARACTERISTICS_DYNAMIC_BASE | IMAGE_DLLCHARACTERISTICS_NX_COMPAT | IMAGE_DLLCHARACTERISTICS_TERMINAL_SERVER_AWARE;
+    uint16_t mDllCharacteristics = 0;
     uint32_t mSizeOfStackReserve = 0x1000;
-    uint32_t mSizeOfStackCommit = 0x100;
+    uint32_t mSizeOfStackCommit = 0x1000;
     uint32_t mSizeOfHeapReserve = 0x1000;
-    uint32_t mSizeOfHeapCommit = 0x100;
+    uint32_t mSizeOfHeapCommit = 0x1000;
     uint32_t mLoaderFlags = 0;
     uint32_t mNumberOfRvaAndSizes = 0;
 };
@@ -183,8 +188,8 @@ struct IMAGE_SECTION_HEADER {
 inline static void writeSectionHeader(std::ofstream& exeFile) {
     IMAGE_SECTION_HEADER text = {
     ".text", sizeOfCode,
-    baseOfCode, (uint32_t)(std::ceil(sizeOfCode / fileAlignment) * fileAlignment),
-    (uint32_t)(std::ceil(sizeOfCode / fileAlignment) * fileAlignment), 0,
+    baseOfCode, roundUp(sizeOfCode, fileAlignment),
+    0x200, 0,
     0, 0,
     0, IMAGE_SCN_CNT_CODE | IMAGE_SCN_MEM_EXECUTE | IMAGE_SCN_MEM_READ };
 
@@ -209,8 +214,4 @@ inline void WriteHeaders(std::ofstream& exeFile) {
     const ushort mSizeOfHeadersLocation = (ushort)exeFile.tellp() - 36; //52 for PE32+
 
     writeSectionHeader(exeFile);
-
-    const ulong sizeOfHeaders = std::ceil((double)exeFile.tellp() / fileAlignment) * fileAlignment;
-    exeFile.seekp(mSizeOfHeadersLocation);
-    exeFile.write((char*)&sizeOfHeaders, 4);
 }

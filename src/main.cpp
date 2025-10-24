@@ -4,16 +4,31 @@
 
 
 void Error(const char* message) {
-    printf("ERROR: %s.", message);
+    printf("ERROR: %s.\n\n", message);
 
     exit(-1);
 }
 
 
 void Error(const char* message, ulong& line) {
-    std::cerr << "ERROR: " << message << ". Line: " << line;
+    std::cerr << "ERROR: " << message << ". Line: " << line << "\n\n";
 
     exit(-1);
+}
+
+
+void CompilerError(const char* message, ulong& line) {
+    std::cerr << "Compiler error: " << message << ". Please report this bug to the creators of this compiler. Line: " << line << "\n\n";
+
+    exit(-1);
+}
+
+
+
+
+
+inline ulong roundUp(const ulong& number, const double& roundup) {
+    return std::ceil((double)number / roundup) * roundup;
 }
 
 
@@ -42,6 +57,9 @@ static void ProcessArguments(fs::path& srcPath, fs::path& exePath, const ubyte a
 
 ulong sizeOfCode;
 ulong sizeOfImage;
+ushort headerSize = 0x200; //Currently used as a constant, function for calculating header size needed
+
+bool long64bitMode = false;
 
 int main(const ubyte argc, char* argv[]) {
     if (argc < 2)
@@ -58,8 +76,8 @@ int main(const ubyte argc, char* argv[]) {
 
 
     CompileSource(srcPath, exeFile);
-    sizeOfCode = (ulong)exeFile.tellp() - (ulong)baseOfCode;
-    sizeOfImage = std::ceil((double)exeFile.tellp() / sectionAlignment) * sectionAlignment;
+    sizeOfCode = (ulong)exeFile.tellp() - headerSize;
+    sizeOfImage = exeFile.tellp();
 
     WriteHeaders(exeFile);
 

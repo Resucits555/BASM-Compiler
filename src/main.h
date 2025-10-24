@@ -12,17 +12,24 @@ typedef std::uint_fast32_t ulong;
 namespace fs = std::filesystem;
 
 
-const double sectionAlignment = 0x2000;
+const double sectionAlignment = 0x1000;
+const double fileAlignment = 0x200;
 
 const ulong baseOfCode = sectionAlignment;
 extern ulong sizeOfCode;
 extern ulong sizeOfImage;
+extern ushort headerSize;
+
+extern bool long64bitMode;
+
 
 //official max size for a section name is 8 chars
 const char sections[][9] = { "bss", "data", "text" };
 
 
-extern void Error(const char*);
-extern void Error(const char*, ulong&);
+extern void Error(const char* message);
+extern void Error(const char* message, ulong& line);
+extern void CompilerError(const char* message, ulong& line);
 extern void WriteHeaders(std::ofstream&);
 extern void CompileSource(const fs::path&, std::ofstream&);
+extern ulong roundUp(const ulong& number, const double& roundup);
