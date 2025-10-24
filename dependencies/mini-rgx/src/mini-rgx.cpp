@@ -17,7 +17,7 @@ namespace mrx {
         const char alphanum[] = "etaoinshrdlcumwfgypbvkjxqzETAOINSHRDLCUMWFGYPBVKJXQZ0123456789";
         const char spaces[] = " \t\v";
         const char punctuation[] = ".,:;";
-        const char groupSpecifiers[] = "adwsp";
+        const char groupSpecifiers[] = "adwspADWSP";
 
         const char* const groups[] = { alphabet, numbers, alphanum, spaces, punctuation, groupSpecifiers };
 
