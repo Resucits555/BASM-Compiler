@@ -9,13 +9,18 @@ const ushort optionalHeaderSize = 96;
 
 inline static void writeMZHeader(std::ofstream& exeFile) {
     exeFile.write("MZ", 2);
-    exeFile.seekp(4);
-    ulong sizeOfImagePages = roundUp(sizeOfImage, sectionAlignment) / 512;
+
+    exeFile.seekp(0x04);
+    ulong sizeOfImagePages = roundUp(sizeOfImage, fileAlignment) / 512;
     exeFile.write((char*)&sizeOfImagePages, 2);
+
     exeFile.seekp(0x08);
-    exeFile.write((char*)&headerSize, 2);
+    ulong headerSizeParagraphs = roundUp(headerSize, fileAlignment) / 16;
+    exeFile.write((char*)&headerSizeParagraphs, 2);
+
     exeFile.seekp(0x0C);
     exeFile.write("\xFF\xFF", 2);
+
     exeFile.seekp(0x3C);
     exeFile.write((char*)&e_lfanew, 4);
 }
@@ -115,14 +120,14 @@ struct Pe32OptionalHeader {
     uint32_t mImageBase = 0x400000;
     uint32_t mSectionAlignment = sectionAlignment;
     uint32_t mFileAlignment = fileAlignment;
-    uint16_t mMajorOperatingSystemVersion = 4;
+    uint16_t mMajorOperatingSystemVersion = 6;
     uint16_t mMinorOperatingSystemVersion = 0;
     uint16_t mMajorImageVersion = 0;
     uint16_t mMinorImageVersion = 0;
-    uint16_t mMajorSubsystemVersion = 4;
+    uint16_t mMajorSubsystemVersion = 6;
     uint16_t mMinorSubsystemVersion = 0;
     uint32_t mWin32VersionValue = 0;
-    uint32_t mSizeOfImage = 0x4000;
+    uint32_t mSizeOfImage = 0x2000;
     uint32_t mSizeOfHeaders = headerSize;
     uint32_t mCheckSum = 0;
     uint16_t mSubsystem = IMAGE_SUBSYSTEM_WINDOWS_CUI;

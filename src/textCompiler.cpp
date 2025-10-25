@@ -261,6 +261,21 @@ inline static void WriteToExe(std::ofstream& exeFile, instruction instr) {
 
 
 
+inline static void fillNullUntil(std::ofstream& file, int until) {
+    const ubyte nullsSize = 0x50;
+    const char nulls[nullsSize] = "";
+
+    int toFill = until - file.tellp();
+
+    for (toFill; toFill >= nullsSize; toFill -= nullsSize)
+        file.write(nulls, nullsSize);
+    file.write(nulls, toFill);
+}
+
+
+
+
+
 inline void CompileSource(const fs::path& srcPath, std::ofstream& exeFile) {
     exeFile.seekp(headerSize);
 
@@ -326,4 +341,6 @@ inline void CompileSource(const fs::path& srcPath, std::ofstream& exeFile) {
     exeFile.put(leaveInstruction);
     constexpr ubyte returnInstruction = 0xC3;
     exeFile.put(returnInstruction);
+
+    fillNullUntil(exeFile, 0x400);
 }
