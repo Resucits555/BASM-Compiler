@@ -28,8 +28,8 @@ const char sections[][9] = { "bss", "data", "text" };
 
 
 extern void Error(const char* message);
-extern void Error(const char* message, ulong& line);
-extern void CompilerError(const char* message, ulong& line);
+extern void Error(const char* message, ulong line);
+extern void CompilerError(const char* message, ulong line);
 extern void WriteHeaders(std::ofstream&);
 extern void CompileSource(const fs::path&, std::ofstream&);
 extern ulong roundUp(const ulong& number, const double& roundup);

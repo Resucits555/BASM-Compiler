@@ -5,6 +5,20 @@
 //https://wiki.osdev.org/X86-64_Instruction_Encoding is the primary source of information for this project.
 
 
+class lineNumber {
+    ulong val = 0;
+
+    friend void CompileSource(const fs::path&, std::ofstream&);
+
+public:
+    ulong value() const {
+        return val;
+    }
+};
+
+
+
+
 struct argument {
     char type = NULL;
     bool variableSize = false;
@@ -16,9 +30,10 @@ struct argument {
 
 
 
-struct instruction {
+class instruction {
+    sbyte lastPrefixIndex = -1;
+public:
     ubyte prefixes[4] = {};
-    ubyte lastPrefixIndex = 0;
 
     ubyte opcode[3] = {}; //an opcode can be up to 3 bytes in size
     ubyte primaryOpcodeIndex = 0;
@@ -32,6 +47,14 @@ struct instruction {
     ubyte immediateSize = 0;
     uint64_t data = 0; //used for displacement values and direct addresses
     uint64_t immediate = 0;
+
+    void addPrefix(const ubyte& prefix) {
+        prefixes[lastPrefixIndex++] = prefix;
+    }
+
+    sbyte getLastPrefixIndex() const {
+        return lastPrefixIndex;
+    }
 };
 
 

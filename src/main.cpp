@@ -10,14 +10,14 @@ void Error(const char* message) {
 }
 
 
-void Error(const char* message, ulong& line) {
+void Error(const char* message, ulong line) {
     std::cerr << "ERROR: " << message << ". Line: " << line << "\n\n";
 
     exit(-1);
 }
 
 
-void CompilerError(const char* message, ulong& line) {
+void CompilerError(const char* message, ulong line) {
     std::cerr << "Compiler error: " << message << ". Please report this bug to the creators of this compiler. Line: " << line << "\n\n";
 
     exit(-1);
@@ -69,20 +69,13 @@ int main(const ubyte argc, char* argv[]) {
     fs::path exePath;
     ProcessArguments(srcPath, exePath, argc, argv);
 
-
     std::ofstream exeFile(exePath, std::ios::binary);
     if (!exeFile.is_open())
         Error("Failed to create executable file");
 
-
     CompileSource(srcPath, exeFile);
-    sizeOfCode = (ulong)exeFile.tellp() - headerSize;
-    sizeOfImage = exeFile.tellp();
-
     WriteHeaders(exeFile);
 
     exeFile.close();
     std::cout << "\nProgram successfully compiled!\n";
-
-    return 0;
 }
