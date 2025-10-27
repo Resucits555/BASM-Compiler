@@ -37,8 +37,7 @@ static std::optional<ubyte> findStringInArray(const char* string, const char* ar
 
 
 inline static sbyte NewSection(std::string& inputLine) {
-    inputLine = inputLine.substr(1, SIZE_MAX);
-    const char sections[][8] = {".text", ".data", ".bss"};
+    constexpr char sections[][8] = {".text", ".data", ".bss"};
 
     for (int obj = 0; obj < std::size(sections); obj++) {
         for (int i = 0; sections[obj][i] == inputLine[i]; i++) {
@@ -73,7 +72,7 @@ inline static void GetArguments(const char* inputLine, argument* args) {
     if (tokenizedInput == nullptr)
         Error("\"malloc\" function failed");
 
-    strcpy(tokenizedInput, inputLine); //Visual Studio does not recognise exit() as a deadend function, aka computer dumb
+    strcpy(tokenizedInput, inputLine);
 
     const char delimiters[] = " \t,.";
     strtok(tokenizedInput, delimiters); //don't need the mnemonic
@@ -265,21 +264,6 @@ inline static void WriteToExe(std::ofstream& exeFile, instruction instr) {
 
 
 
-inline static void fillNullUntil(std::ofstream& file, int until) {
-    const ubyte nullsSize = 0x50;
-    const char nulls[nullsSize] = "";
-
-    int toFill = until - file.tellp();
-
-    for (toFill; toFill >= nullsSize; toFill -= nullsSize)
-        file.write(nulls, nullsSize);
-    file.write(nulls, toFill);
-}
-
-
-
-
-
 inline void CompileSource(const fs::path& srcPath, std::ofstream& exeFile) {
     exeFile.seekp(headerSize);
 
@@ -339,7 +323,5 @@ inline void CompileSource(const fs::path& srcPath, std::ofstream& exeFile) {
 
     sourceFile.close();
 
-    sizeOfCode = (ulong)exeFile.tellp() - headerSize;
-    sizeOfImageFile = exeFile.tellp();
-    fillNullUntil(exeFile, roundUp(sizeOfImageFile, fileAlignment));
+    codeSize = (ulong)exeFile.tellp() - headerSize;
 }

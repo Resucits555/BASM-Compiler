@@ -4,15 +4,11 @@
 #include "headers.h"
 
 
-const ulong e_lfanew = 0x80;
-const ushort optionalHeaderSize = 96;
-
-
 inline static void writeMZHeader(std::ofstream& exeFile) {
     exeFile.write("MZ", 2);
 
     exeFile.seekp(0x04);
-    ulong sizeOfImagePages = roundUp(sizeOfImageFile, fileAlignment) / 512;
+    ulong sizeOfImagePages = roundUp(sizeOfFile, fileAlignment) / 512;
     exeFile.write((char*)&sizeOfImagePages, 2);
 
     exeFile.seekp(0x08);
@@ -62,22 +58,15 @@ inline static void writeCOFFHeader(std::ofstream& exeFile) {
 
 inline static void writeOptionalHeader(std::ofstream& exeFile) {
     Pe32OptionalHeader OH;
-    exeFile.write((char*)&OH, optionalHeaderSize);
-}
+    exeFile.write((char*)&OH, 96);
 
 
+    exeFile.seekp((ubyte)exeFile.tellp() + 8);
 
-
-
-inline static void writeDataDirectories(std::ofstream& exeFile) {
-    const char emptyDirectory[8] = "";
-    exeFile.write(emptyDirectory, sizeof(IMAGE_DATA_DIRECTORY));
-
-    ulong rdataAddress = roundUp(headerSize, sectionAlignment) + roundUp(sizeOfCode, sectionAlignment);
-    IMAGE_DATA_DIRECTORY importTable = {rdataAddress};
+    IMAGE_DATA_DIRECTORY importTable = { rdataRVA + 8, 0x28 };
     exeFile.write((char*)&importTable, sizeof(IMAGE_DATA_DIRECTORY));
 
-    exeFile.seekp((int)exeFile.tellp() + (14 * sizeof(IMAGE_DATA_DIRECTORY)));
+    exeFile.seekp((ushort)exeFile.tellp() + (14 * sizeof(IMAGE_DATA_DIRECTORY)));
 }
 
 
@@ -85,9 +74,25 @@ inline static void writeDataDirectories(std::ofstream& exeFile) {
 
 
 inline static void writeSectionHeader(std::ofstream& exeFile) {
-    IMAGE_SECTION_HEADER text = {".text", sizeOfCode, baseOfCode, roundUp(sizeOfCode, fileAlignment), 0x200, 0, 0, 0, 0, IMAGE_SCN_CNT_CODE | IMAGE_SCN_MEM_EXECUTE | IMAGE_SCN_MEM_READ };
+    IMAGE_SECTION_HEADER text;
+    strcpy(text.mName, ".text");
+    text.mVirtualSize = codeSize;
+    text.mVirtualAddress = codeRVA;
+    text.mSizeOfRawData = roundUp(codeSize, fileAlignment);
+    text.mPointerToRawData = codeAddress;
+    text.mCharacteristics = IMAGE_SCN_CNT_CODE | IMAGE_SCN_MEM_EXECUTE | IMAGE_SCN_MEM_READ;
 
-    exeFile.write((char*)&text, sizeof(IMAGE_SECTION_HEADER));
+    exeFile.write((char*)&text, sizeof(text));
+
+    IMAGE_SECTION_HEADER rdata;
+    strcpy(rdata.mName, ".rdata");
+    rdata.mVirtualSize = rdataSize;
+    rdata.mVirtualAddress = rdataRVA;
+    rdata.mSizeOfRawData = roundUp(rdataSize, fileAlignment);
+    rdata.mPointerToRawData = rdataAddress;
+    rdata.mCharacteristics = IMAGE_SCN_CNT_INITIALIZED_DATA | IMAGE_SCN_MEM_READ;
+
+    exeFile.write((char*)&rdata, sizeof(rdata));
 }
 
 
@@ -101,9 +106,6 @@ inline void WriteHeaders(std::ofstream& exeFile) {
     writeDOSStub(exeFile);
 
     writeCOFFHeader(exeFile);
-
     writeOptionalHeader(exeFile);
-    //writeDataDirectories(exeFile);
-
     writeSectionHeader(exeFile);
 }

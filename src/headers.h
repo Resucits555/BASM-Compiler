@@ -1,6 +1,10 @@
 #pragma once
 
 
+const ulong e_lfanew = 0x80;
+constexpr ushort optionalHeaderSize = 96 + (16 * 8);
+
+
 enum coff_machine : uint16_t
 {
     IMAGE_FILE_MACHINE_UNKNOWN = 0x0,
@@ -52,7 +56,7 @@ enum coff_characteristics : uint16_t
 struct COFF_Header {
     const char mMagic[4] = "PE";
     uint16_t mMachine = IMAGE_FILE_MACHINE_I386;
-    uint16_t mNumberOfSections = 1;
+    uint16_t mNumberOfSections = 2;
     uint32_t mTimeDateStamp = 0;
     uint32_t mPointerToSymbolTable = 0;
     uint32_t mNumberOfSymbols = 0;
@@ -87,11 +91,11 @@ struct Pe32OptionalHeader {
     uint16_t mMagic = 0x010b;
     uint8_t  mMajorLinkerVersion = 0;
     uint8_t  mMinorLinkerVersion = 0;
-    uint32_t mSizeOfCode = roundUp(sizeOfCode, fileAlignment);
+    uint32_t mSizeOfCode = roundUp(codeSize, fileAlignment);
     uint32_t mSizeOfInitializedData = 0;
     uint32_t mSizeOfUninitializedData = 0;
-    uint32_t mAddressOfEntryPoint = baseOfCode;
-    uint32_t mBaseOfCode = baseOfCode;
+    uint32_t mAddressOfEntryPoint = codeRVA;
+    uint32_t mBaseOfCode = codeRVA;
     uint32_t mBaseOfData = 0;
     uint32_t mImageBase = 0x400000;
     uint32_t mSectionAlignment = sectionAlignment;
@@ -103,17 +107,17 @@ struct Pe32OptionalHeader {
     uint16_t mMajorSubsystemVersion = 6;
     uint16_t mMinorSubsystemVersion = 0;
     uint32_t mWin32VersionValue = 0;
-    uint32_t mSizeOfImage = 0x2000;
+    uint32_t mSizeOfImage = rdataRVA + roundUp(rdataSize, sectionAlignment);
     uint32_t mSizeOfHeaders = headerSize;
     uint32_t mCheckSum = 0;
-    uint16_t mSubsystem = IMAGE_SUBSYSTEM_WINDOWS_CUI;
+    enum pe_subsystem mSubsystem = IMAGE_SUBSYSTEM_WINDOWS_CUI;
     uint16_t mDllCharacteristics = 0;
-    uint32_t mSizeOfStackReserve = 0x1000;
-    uint32_t mSizeOfStackCommit = 0x1000;
-    uint32_t mSizeOfHeapReserve = 0x1000;
-    uint32_t mSizeOfHeapCommit = 0x1000;
+    uint32_t mSizeOfStackReserve = 0x0;
+    uint32_t mSizeOfStackCommit = 0x0;
+    uint32_t mSizeOfHeapReserve = 0x0;
+    uint32_t mSizeOfHeapCommit = 0x0;
     uint32_t mLoaderFlags = 0;
-    uint32_t mNumberOfRvaAndSizes = 0;
+    uint32_t mNumberOfRvaAndSizes = 16;
 };
 
 
@@ -159,14 +163,14 @@ enum pe_section_flags : uint32_t
 };
 
 struct IMAGE_SECTION_HEADER {
-    const char mName[8];
+    char mName[8];
     uint32_t mVirtualSize;
     uint32_t mVirtualAddress;
     uint32_t mSizeOfRawData;
     uint32_t mPointerToRawData;
-    uint32_t mPointerToRelocations;
-    uint32_t mPointerToLinenumbers;
-    uint16_t mNumberOfRelocations;
-    uint16_t mNumberOfLinenumbers;
+    uint32_t mPointerToRelocations = 0;
+    uint32_t mPointerToLinenumbers = 0;
+    uint16_t mNumberOfRelocations = 0;
+    uint16_t mNumberOfLinenumbers = 0;
     uint32_t mCharacteristics;
 };

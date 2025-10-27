@@ -11,7 +11,8 @@ set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/bin)
 add_executable(main
 src/main.cpp
 src/headers.cpp
-src/textCompiler.cpp)
+src/textCompiler.cpp
+src/sections.cpp)
 
 
 target_include_directories(main PUBLIC dependencies/mini-rgx/src)
