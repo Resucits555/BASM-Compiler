@@ -55,8 +55,11 @@ static void ProcessArguments(fs::path& srcPath, fs::path& exePath, const ubyte a
 
 
 
+//Variables with ending "File" represent the address or size inside the exe file
+//Ending "Section" represents the value in the process
+//Both don't round up to section or file alignment
 ulong sizeOfCode;
-ulong sizeOfImage;
+ulong sizeOfImageFile;
 ushort headerSize = 0x200; //Currently used as a constant, function for calculating header size needed
 
 bool long64bitMode = false;

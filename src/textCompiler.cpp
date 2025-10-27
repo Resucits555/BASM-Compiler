@@ -9,7 +9,6 @@
 lineNumber line;
 
 
-
 //Returns the minimum amount of bits the value could be stored in
 static ubyte minBitsToStore(uintmax_t value, bool negative) {
     if (negative)
@@ -39,6 +38,7 @@ static std::optional<ubyte> findStringInArray(const char* string, const char* ar
 
 inline static sbyte NewSection(std::string& inputLine) {
     inputLine = inputLine.substr(1, SIZE_MAX);
+    const char sections[][8] = {".text", ".data", ".bss"};
 
     for (int obj = 0; obj < std::size(sections); obj++) {
         for (int i = 0; sections[obj][i] == inputLine[i]; i++) {
@@ -133,7 +133,7 @@ static std::optional<instruction> isFittingInstruction(const pugi::xml_node& ent
 
 
     ubyte entryArgCounter = 0;
-    for (pugi::xml_node argNode = entry.first_child().first_child().next_sibling(); argNode.type() != pugi::node_null; argNode = argNode.next_sibling()) {
+    for (pugi::xml_node argNode = entry.child("syntax").first_child().next_sibling(); argNode.type() != pugi::node_null; argNode = argNode.next_sibling()) {
         argument& textArg = args[entryArgCounter];
 
 
@@ -340,6 +340,6 @@ inline void CompileSource(const fs::path& srcPath, std::ofstream& exeFile) {
     sourceFile.close();
 
     sizeOfCode = (ulong)exeFile.tellp() - headerSize;
-    sizeOfImage = exeFile.tellp();
-    fillNullUntil(exeFile, roundUp(sizeOfImage, fileAlignment));
+    sizeOfImageFile = exeFile.tellp();
+    fillNullUntil(exeFile, roundUp(sizeOfImageFile, fileAlignment));
 }

@@ -20,6 +20,6 @@ add_subdirectory(dependencies/mini-rgx)
 target_link_libraries(main PUBLIC mini-rgx)
 
 target_include_directories(main PUBLIC dependencies/pugixml-1.15/src)
-link_directories(build/dependencies/pugixml/Debug)
+link_directories(build/dependencies/pugixml-1.15/Debug)
 add_subdirectory(dependencies/pugixml-1.15)
 target_link_libraries(main PUBLIC pugixml)

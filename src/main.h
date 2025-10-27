@@ -12,19 +12,18 @@ typedef std::uint_fast32_t ulong;
 namespace fs = std::filesystem;
 
 
+
 const double sectionAlignment = 0x1000;
 const double fileAlignment = 0x200;
 
+
 const ulong baseOfCode = sectionAlignment;
 extern ulong sizeOfCode;
-extern ulong sizeOfImage;
+extern ulong sizeOfImageFile;
 extern ushort headerSize;
 
 extern bool long64bitMode;
 
-
-//official max size for a section name is 8 chars
-const char sections[][9] = { "bss", "data", "text" };
 
 
 extern void Error(const char* message);
