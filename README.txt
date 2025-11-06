@@ -1,1 +1,0 @@
-This is a personal project for an assembly compiler. It's syntax will be similar to Intel's but have a few added features. It has no third party dependencies apart from some that are only there because it's busy work, like the xmlreference so there's no need to rewrite all the mnemonics, opcodes and argument attributes, + a library to read it.

@@ -6,7 +6,7 @@
 #include "compilationData.h"
 
 
-lineNumber line;
+ErrorData errorData;
 
 
 //Returns the minimum amount of bits the value could be stored in
@@ -15,39 +15,6 @@ static ubyte minBitsToStore(uintmax_t value, bool negative) {
         value = ~value << 1;
 
     return floor(log2(value) + 1);
-}
-
-
-
-
-
-static std::optional<ubyte> findStringInArray(const char* string, const char* array, ushort arraySize, ubyte stringSize) {
-    for (ubyte stringI = 0; stringI < arraySize; stringI++) {
-        for (ubyte charI = 0; string[charI] == (array + (stringI * stringSize))[charI]; charI++) {
-            if ((array + (stringI * stringSize))[charI] == NULL) {
-                return stringI;
-            }
-        }
-    }
-    return std::nullopt;
-}
-
-
-
-
-
-inline static sbyte NewSection(std::string& inputLine) {
-    constexpr char sections[][8] = {".text", ".data", ".bss"};
-
-    for (int obj = 0; obj < std::size(sections); obj++) {
-        for (int i = 0; sections[obj][i] == inputLine[i]; i++) {
-            if (sections[obj][i] == NULL) {
-                return obj;
-            }
-        }
-    }
-    
-    return -1;
 }
 
 
@@ -75,12 +42,12 @@ inline static void GetArguments(const char* inputLine, argument* args) {
     strcpy(tokenizedInput, inputLine);
 
     const char delimiters[] = " \t,.";
-    strtok(tokenizedInput, delimiters); //don't need the mnemonic
+    (void)strtok(tokenizedInput, delimiters);
 
     const char* argstr = strtok(nullptr, delimiters);
     for (sbyte i = 0; argstr != nullptr; i++) {
         if (i >= 2)
-            Error("Invalid arguments", line.value());
+            Error(errorData, "Invalid arguments");
 
         argument& arg = args[i];
 
@@ -181,7 +148,21 @@ static std::optional<instruction> isFittingInstruction(const pugi::xml_node& ent
 
         const ubyte arrayI = log2(textArg.size / 8);
         if (arrayI == 3 && !long64bitMode)
-            Error("Invalid instruction in 32bit mode", line.value());
+            Error(errorData, "Invalid instruction in 32bit mode");
+
+
+        constexpr char _8[][4] = { "b", "bs", "bss" };
+        constexpr ubyte _8req[3] = {};
+        constexpr char _16[][4] = { "a", "v", "vds", "vq", "vqp", "vs", "w", "wi", "va", "wa", "wo", "ws" };
+        constexpr ubyte _16req[12] = { SHRINK | DOUBLED, SHRINK, SHRINK, SHRINK, SHRINK, SHRINK, 0, 0, NOSHRINK };
+        constexpr char _32[][4] = { "a", "d", "di", "dqp", "ds", "p", "ptp", "sr", "v", "vds", "vqp", "vs", "va", "dqa", "da", "do" };
+        constexpr ubyte _32req[16] = { NOSHRINK | DOUBLED, 0, 0, 0, 0, SHRINK, SHRINK, 0, NOSHRINK, NOSHRINK, NOSHRINK, NOSHRINK, ADDRESS };
+        constexpr char _64[][4] = { "dqp", "dr", "pi", "psq", "q", "qi", "qp", "vqp", "dqa", "qa", "qs" };
+        constexpr ubyte _64req[11] = { REXW, 0, 0, 0, 0, 0, REXW, REXW, ADDRESS };
+
+        const char* const operands[] = { *_8, *_16, *_32, *_64 };
+        const ubyte* const reqArrays[] = { _8req, _16req, _32req, _64req };
+        constexpr ubyte arraySizes[] = { 3, 12, 16, 11 };
 
         const std::optional<ubyte> operandI = findStringInArray(type, operands[arrayI], arraySizes[arrayI], 4);
         if (!operandI.has_value())
@@ -237,7 +218,7 @@ inline static instruction FindInstruction(std::string& mnemonic, argument* args,
     }
 
     if (!bestInstrFound.has_value())
-        Error("No fitting opcode found. Check the instruction's arguments, one of them could be too big or too small, or just invalid for this instruction", line.value());
+        Error(errorData, "No fitting opcode found. Check the instruction's arguments, one of them could be too big or too small, or just invalid for this instruction");
 
     return bestInstrFound.value();
 }
@@ -246,58 +227,64 @@ inline static instruction FindInstruction(std::string& mnemonic, argument* args,
 
 
 
-inline static void WriteToExe(std::ofstream& exeFile, instruction instr) {
-    exeFile.write((char*)&instr.prefixes, instr.getLastPrefixIndex() + 1);
+inline static void WriteToExe(std::ofstream& output, instruction instr) {
+    output.write((char*)&instr.prefixes, instr.getLastPrefixIndex() + 1);
 
-    exeFile.write((char*)&instr.opcode, instr.primaryOpcodeIndex + 1);
+    output.write((char*)&instr.opcode, instr.primaryOpcodeIndex + 1);
 
     if (instr.modrmUsed)
-        exeFile.put(instr.modrm);
+        output.put(instr.modrm);
     if (instr.sibUsed)
-        exeFile.put(instr.sib);
+        output.put(instr.sib);
     
-    exeFile.write((char*)&instr.data, instr.dataSize);
-    exeFile.write((char*)&instr.immediate, instr.immediateSize);
+    output.write((char*)&instr.data, instr.dataSize);
+    output.write((char*)&instr.immediate, instr.immediateSize);
 }
 
 
 
 
 
-inline void CompileSource(const fs::path& srcPath, std::ofstream& exeFile) {
-    exeFile.seekp(headerSize);
+void CompileSource(std::ofstream& output, const char* srcPath, IMAGE_SECTION_HEADER* sections) {
+    errorData.line = 0;
+    errorData.path = srcPath;
+
 
     std::ifstream sourceFile;
     sourceFile.open(srcPath);
 
+    if (!sourceFile.is_open())
+        Error(errorData, "Failed to open file");
+
+
     pugi::xml_document x86reference;
     x86reference.load_file("../data/x86reference-master/x86reference.xml");
     pugi::xml_node one_byte = x86reference.first_child().first_child();
-
-    if (!sourceFile.is_open())
-        Error("Failed to open source file. Your path may be wrong. '/' and '\\' are treated the same");
 
 
     ubyte section = UINT8_MAX;
 
     while (!sourceFile.eof()) {
         std::string inputLine;
-        line.val++;
-        getline(sourceFile, inputLine);
+        errorData.line++;
 
+        getline(sourceFile, inputLine);
         if (sourceFile.fail())
-            Error("Failed to read source file. Your path may be wrong. '/' and '\\' are treated the same");
+            Error(errorData, "Failed to read source file. If the error is thrown at line 1, then your path may be wrong. '/' and '\\' are treated the same");
+
 
         if (!mrx::FindCharOfGroup('S', inputLine).has_value())
             continue;
 
 
         if (inputLine[0] == '.') {
-            sbyte newSection = NewSection(inputLine);
-            if (newSection < 0)
-                Error("Unknown section name", line.value());
-            else
-                section = newSection;
+            constexpr char sectionNames[][8] = { ".text", ".data", ".bss" };
+            std::optional<ubyte> newSection = findStringInArray(inputLine.c_str(), *sectionNames, std::size(sectionNames), 8);
+
+            if (!newSection.has_value())
+                Error(errorData, "Unknown section name");
+
+            section = newSection.value();
             continue;
         }
 
@@ -308,7 +295,7 @@ inline void CompileSource(const fs::path& srcPath, std::ofstream& exeFile) {
 
         std::optional<std::string> mnemonic = mrx::FindRgxSubstr(inputLine, "%a+");
         if (!mnemonic.has_value())
-            Error("Invalid characters", line.value());
+            Error(errorData, "Invalid characters");
 
         instruction instr;
         argument args[2];
@@ -316,12 +303,10 @@ inline void CompileSource(const fs::path& srcPath, std::ofstream& exeFile) {
 
         instr = FindInstruction(mnemonic.value(), args, one_byte);
         if (instr.dataSize + instr.immediateSize > 8)
-            CompilerError("Sum of disp and imm sizes is more than 8 bytes", line.value());
+            CompilerError(errorData, "Sum of disp and imm sizes is more than 8 bytes");
 
-        WriteToExe(exeFile, instr);
+        WriteToExe(output, instr);
     }
 
     sourceFile.close();
-
-    codeSize = (ulong)exeFile.tellp() - headerSize;
 }
