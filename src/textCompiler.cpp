@@ -227,25 +227,25 @@ inline static instruction FindInstruction(std::string& mnemonic, argument* args,
 
 
 
-inline static void WriteToExe(std::ofstream& output, instruction instr) {
-    output.write((char*)&instr.prefixes, instr.getLastPrefixIndex() + 1);
+inline static void WriteToExe(std::ofstream& outFile, instruction instr) {
+    outFile.write((char*)&instr.prefixes, instr.getLastPrefixIndex() + 1);
 
-    output.write((char*)&instr.opcode, instr.primaryOpcodeIndex + 1);
+    outFile.write((char*)&instr.opcode, instr.primaryOpcodeIndex + 1);
 
     if (instr.modrmUsed)
-        output.put(instr.modrm);
+        outFile.put(instr.modrm);
     if (instr.sibUsed)
-        output.put(instr.sib);
+        outFile.put(instr.sib);
     
-    output.write((char*)&instr.data, instr.dataSize);
-    output.write((char*)&instr.immediate, instr.immediateSize);
+    outFile.write((char*)&instr.data, instr.dataSize);
+    outFile.write((char*)&instr.immediate, instr.immediateSize);
 }
 
 
 
 
 
-void CompileSource(std::ofstream& output, const char* srcPath, IMAGE_SECTION_HEADER* sections) {
+void CompileSource(std::ofstream& outFile, const char* srcPath, IMAGE_SECTION_HEADER (&sections)[]) {
     errorData.line = 0;
     errorData.path = srcPath;
 
@@ -262,8 +262,6 @@ void CompileSource(std::ofstream& output, const char* srcPath, IMAGE_SECTION_HEA
     pugi::xml_node one_byte = x86reference.first_child().first_child();
 
 
-    ubyte section = UINT8_MAX;
-
     while (!sourceFile.eof()) {
         std::string inputLine;
         errorData.line++;
@@ -275,18 +273,6 @@ void CompileSource(std::ofstream& output, const char* srcPath, IMAGE_SECTION_HEA
 
         if (!mrx::FindCharOfGroup('S', inputLine).has_value())
             continue;
-
-
-        if (inputLine[0] == '.') {
-            constexpr char sectionNames[][8] = { ".text", ".data", ".bss" };
-            std::optional<ubyte> newSection = findStringInArray(inputLine.c_str(), *sectionNames, std::size(sectionNames), 8);
-
-            if (!newSection.has_value())
-                Error(errorData, "Unknown section name");
-
-            section = newSection.value();
-            continue;
-        }
 
 
         size_t commentPos = inputLine.find(';');
@@ -305,8 +291,11 @@ void CompileSource(std::ofstream& output, const char* srcPath, IMAGE_SECTION_HEA
         if (instr.dataSize + instr.immediateSize > 8)
             CompilerError(errorData, "Sum of disp and imm sizes is more than 8 bytes");
 
-        WriteToExe(output, instr);
+        WriteToExe(outFile, instr);
     }
+
+    outFile.put(0xC3);
+    sections[0].mSizeOfRawData = (uint32_t)outFile.tellp() - sections[0].mPointerToRawData;
 
     sourceFile.close();
 }
