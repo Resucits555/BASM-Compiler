@@ -1,4 +1,3 @@
-#include <filesystem>
 #include <pugixml.hpp>
 #include <mini-rgx.h>
 
@@ -245,13 +244,9 @@ inline static void WriteToExe(std::ofstream& outFile, instruction instr) {
 
 
 
-void CompileSource(std::ofstream& outFile, const char* srcPath, IMAGE_SECTION_HEADER (&sections)[]) {
+void CompileSource(std::ofstream& outFile, std::ifstream& sourceFile, const char* srcPath, IMAGE_SECTION_HEADER (&sections)[]) {
     errorData.line = 0;
     errorData.path = srcPath;
-
-
-    std::ifstream sourceFile;
-    sourceFile.open(srcPath);
 
     if (!sourceFile.is_open())
         Error(errorData, "Failed to open file");
@@ -262,8 +257,10 @@ void CompileSource(std::ofstream& outFile, const char* srcPath, IMAGE_SECTION_HE
     pugi::xml_node one_byte = x86reference.first_child().first_child();
 
 
+    std::string inputLine;
+    inputLine.reserve(50);
+
     while (!sourceFile.eof()) {
-        std::string inputLine;
         errorData.line++;
 
         getline(sourceFile, inputLine);
@@ -296,6 +293,4 @@ void CompileSource(std::ofstream& outFile, const char* srcPath, IMAGE_SECTION_HE
 
     outFile.put(0xC3);
     sections[0].mSizeOfRawData = (uint32_t)outFile.tellp() - sections[0].mPointerToRawData;
-
-    sourceFile.close();
 }

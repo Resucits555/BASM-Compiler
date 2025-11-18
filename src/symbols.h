@@ -88,12 +88,49 @@ union auxFilename {
 
 
 
-struct COFF_AuxSection {
-    uint32_t length = 0;
-    uint16_t numberOfRelocations = 0;
-    uint16_t numberOfLineNumbers = 0;
-    uint32_t checkSum = 0;
-    uint16_t number = 0;
-    uint8_t selection = 0;
-    char unused[3] = "";
+// Auxiliary Symbol Formats
+struct AuxiliaryFunctionDefinition {
+    uint32_t TagIndex;
+    uint32_t TotalSize;
+    uint32_t PointerToLinenumber;
+    uint32_t PointerToNextFunction;
+    char unused[2];
+};
+
+struct AuxiliarybfAndefSymbol {
+    uint8_t unused1[4];
+    uint16_t Linenumber;
+    uint8_t unused2[6];
+    uint32_t PointerToNextFunction;
+    uint8_t unused3[2];
+};
+
+struct AuxiliaryWeakExternal {
+    uint32_t TagIndex;
+    uint32_t Characteristics;
+    uint8_t unused[10];
+};
+
+enum WeakExternalCharacteristics : unsigned int {
+    IMAGE_WEAK_EXTERN_SEARCH_NOLIBRARY = 1,
+    IMAGE_WEAK_EXTERN_SEARCH_LIBRARY = 2,
+    IMAGE_WEAK_EXTERN_SEARCH_ALIAS = 3,
+    IMAGE_WEAK_EXTERN_ANTI_DEPENDENCY = 4
+};
+
+struct AuxiliarySectionDefinition {
+    uint32_t Length = 0;
+    uint16_t NumberOfRelocations = 0;
+    uint16_t NumberOfLinenumbers = 0;
+    uint32_t CheckSum = 0;
+    uint32_t Number = 0;
+    uint8_t Selection = 0;
+    char unused = 0;
+};
+
+struct AuxiliaryCLRToken {
+    uint8_t AuxType;
+    uint8_t unused1;
+    uint32_t SymbolTableIndex;
+    char unused2[12];
 };

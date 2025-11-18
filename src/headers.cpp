@@ -4,14 +4,14 @@
 #include "headers.h"
 
 
-inline void WriteCOFFHeader(std::ofstream& outFile, const ulong symbolTablePointer) {
+inline void WriteCOFFHeader(std::ofstream& outFile, const fpos_t symtabPos, const fpos_t strtabPos) {
     outFile.seekp(0);
 
     COFF_Header coff;
     coff.numberOfSections = sectionNumber;
     coff.timeDateStamp = time(nullptr);
-    coff.pointerToSymbolTable = symbolTablePointer;
-    coff.numberOfSymbols = 2 * sectionNumber + 2;
+    coff.pointerToSymbolTable = symtabPos;
+    coff.numberOfSymbols = (strtabPos - symtabPos) / 18;
 
     outFile.write((char*)&coff, sizeof(COFF_Header));
 }

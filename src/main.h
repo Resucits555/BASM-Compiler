@@ -1,5 +1,6 @@
 #pragma once
 
+#include <filesystem>
 #include <iostream>
 #include <fstream>
 #include <expected>
@@ -80,7 +81,7 @@ class ErrorData {
     ulong line;
     const char* path;
 
-    friend void CompileSource(std::ofstream& outFile, const char* srcPath, IMAGE_SECTION_HEADER(&sections)[]);
+    friend void CompileSource(std::ofstream& outFile, std::ifstream& sourceFile, const char* srcPath, IMAGE_SECTION_HEADER(&sections)[]);
 
 public:
     ErrorData(const ulong inLine = 0, const char* inPath = nullptr) {
@@ -105,9 +106,9 @@ extern void Error(const char* message);
 extern void Error(const char* path, const char* message);
 extern void Error(const ErrorData& errorData, const char* message);
 extern void CompilerError(const ErrorData& errorData, const char* message);
-extern ulong roundUp(const ulong& number, const double& roundup);
 extern std::optional<ubyte> findStringInArray(const char* string, const char* array, ushort arraySize, ubyte stringSize);
 
-extern void CompileSource(std::ofstream& output, const char* srcPath, IMAGE_SECTION_HEADER(&sections)[]);
-extern void WriteCOFFHeader(std::ofstream& outFile, const ulong symbolTablePointer);
+extern void CompileSource(std::ofstream& output, std::ifstream& sourceFile, const char* srcPath, IMAGE_SECTION_HEADER(&sections)[]);
+extern void WriteSymbolTable(std::ofstream& outFile, std::ifstream& sourceFile, fs::path sourcePath, IMAGE_SECTION_HEADER(&sections)[]);
+extern void WriteCOFFHeader(std::ofstream& outFile, const fpos_t symtabPos, const fpos_t strtabPos);
 extern void WriteSectionTable(std::ofstream& outFile, IMAGE_SECTION_HEADER(&sections)[]);
