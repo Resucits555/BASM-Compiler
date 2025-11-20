@@ -76,18 +76,26 @@ int main(const ubyte argc, char* argv[]) {
     case 0:
     case 1:
     case 2:
-        std::cout << "Usage:\nbasm <command> [<options>] [<file>] [<file>...] [-o <outputname>]\n\n"
+        std::cout << "Usage:\nbasm <command> [<options>] [<file> <file>...]\n\n"
             << "Commands:\n1. \"help\" Displays long help message\n2. \"compile\" Compile all specified files\n\n";
         exit(0);
     case 3:
         for (ubyte fileI = 2; fileI < argc && argv[fileI][0] != '-'; fileI++) {
             fs::path outPath(argv[fileI]);
+            fs::path srcPath = outPath;
             outPath.replace_extension("o");
-            std::ofstream outFile(outPath);
-            std::ifstream srcFile(argv[fileI]);
 
+            std::ofstream outFile(outPath);
             if (!outFile.is_open())
                 Error((char*)outPath.c_str(), "Failed to create output file");
+            outFile.seekp(0);
+
+            std::ifstream srcFile(srcPath);
+            if (!srcFile.is_open()) {
+                char errIntro[] = "ERROR: Failed to open file ";
+                perror(strcat(errIntro, (char*)srcPath.c_str()));
+            }
+
 
 
             IMAGE_SECTION_HEADER sections[sectionNumber];
@@ -98,6 +106,9 @@ int main(const ubyte argc, char* argv[]) {
             CompileSource(outFile, srcFile, argv[fileI], sections);
 
             const fpos_t symtabPos = outFile.tellp();
+
+            srcFile.clear();
+            srcFile.seekg(0);
             WriteSymbolTable(outFile, srcFile, (fs::path)argv[fileI], sections);
             srcFile.close();
 

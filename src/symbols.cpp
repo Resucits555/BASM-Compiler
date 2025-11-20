@@ -3,6 +3,9 @@
 
 
 inline static std::optional<symbol_class> getSymbolClass(const char* str) {
+    while (*str == ' ' || *str == '\t')
+        str++;
+
     if (strncmp(str, "extern", 6) == 0)
         return symbol_class::IMAGE_SYM_CLASS_EXTERNAL;
     if (strncmp(str, "static", 6) == 0)
@@ -15,17 +18,22 @@ inline static std::optional<symbol_class> getSymbolClass(const char* str) {
 
 
 
-inline static ushort CountSymbols(std::ifstream& sourceFile) {
-    sourceFile.seekg(0);
-
-    std::string inputLine;
-    inputLine.reserve(50);
+inline static ushort CountSymbols(std::ifstream& srcFile) {
+    char inputLine[maxLineSize] = "";
 
     ushort symbolCounter = 0;
-    while (!sourceFile.eof()) {
-        getline(sourceFile, inputLine);
+    while (true) {
+        srcFile.getline(inputLine, maxLineSize);
+        if (srcFile.eof())
+            break;
 
-        if (getSymbolClass(inputLine.c_str()).has_value())
+        if (srcFile.fail() && inputLine[maxLineSize - 2] != NULL) {
+            *strchr(inputLine, ';') = NULL;
+            srcFile.clear();
+        }
+            
+
+        if (getSymbolClass(inputLine).has_value())
             symbolCounter++;
     }
 
@@ -36,12 +44,14 @@ inline static ushort CountSymbols(std::ifstream& sourceFile) {
 
 
 
-inline void WriteSymbolTable(std::ofstream& outFile, std::ifstream& sourceFile, fs::path sourcePath, IMAGE_SECTION_HEADER(&sections)[]) {
-    //symbol amount refers to the symtab size divided by 18, which includes aux definitions
+inline void WriteSymbolTable(std::ofstream& outFile, std::ifstream& srcFile, fs::path sourcePath, IMAGE_SECTION_HEADER(&sections)[]) {
+    //symbol amount refers to amount of symbols AND their aux definition
     const ubyte baseSymbolAmount = 8;
-    const ushort symbolAmount = CountSymbols(sourceFile) + baseSymbolAmount;
+    const ushort symbolAmount = CountSymbols(srcFile) + baseSymbolAmount;
+    const fpos_t strtabPos = outFile.tellp() + (fpos_t)COFF_Symbol_Size * (fpos_t)symbolAmount;
+
     const ubyte spaceForStrtabSizeVar = 4;
-    fpos_t strtabEndPos = outFile.tellp() + (fpos_t)COFF_Symbol_Size * (fpos_t)symbolAmount + (fpos_t)spaceForStrtabSizeVar;
+    fpos_t strtabEndPos = strtabPos + spaceForStrtabSizeVar;
 
 
     COFF_Symbol file;
@@ -55,7 +65,7 @@ inline void WriteSymbolTable(std::ofstream& outFile, std::ifstream& sourceFile, 
     outFile.write((char*)&file, COFF_Symbol_Size);
 
 
-    const ubyte filenameLength = sourcePath.filename().string().length();
+    const ubyte filenameLength = sourcePath.filename().string().length() + 1;
 
     if (filenameLength > COFF_Symbol_Size) {
         outFile.seekp(outFile.tellp() + (fpos_t)4);
@@ -63,10 +73,10 @@ inline void WriteSymbolTable(std::ofstream& outFile, std::ifstream& sourceFile, 
 
         fpos_t nextSymPos = outFile.tellp() + (fpos_t)10;
         outFile.seekp(strtabEndPos);
-        outFile.write((char*)sourcePath.filename().u8string().c_str(), filenameLength + 1);
+        outFile.write((char*)sourcePath.filename().u8string().c_str(), filenameLength);
 
         outFile.seekp(nextSymPos);
-        strtabEndPos += filenameLength + 1;
+        strtabEndPos += filenameLength;
     }
     else {
         outFile.write((char*)sourcePath.filename().u8string().c_str(), filenameLength);
@@ -91,6 +101,6 @@ inline void WriteSymbolTable(std::ofstream& outFile, std::ifstream& sourceFile, 
     }
 
 
-    const ulong strtabSize = strtabEndPos - outFile.tellp();
+    const ulong strtabSize = strtabEndPos - strtabPos;
     outFile.write((char*)&strtabSize, 4);
 }

@@ -8,8 +8,7 @@
 ErrorData errorData;
 
 
-//Returns the minimum amount of bits the value could be stored in
-static ubyte minBitsToStore(uintmax_t value, bool negative) {
+static ubyte minBitsToStoreValue(uintmax_t value, bool negative) {
     if (negative)
         value = ~value << 1;
 
@@ -20,8 +19,38 @@ static ubyte minBitsToStore(uintmax_t value, bool negative) {
 
 
 
+inline static void ProcessInputError(std::ifstream& srcFile, const char* srcPath, char* inputLine, const fpos_t startOfLine) {
+    if (srcFile.bad()) {
+        std::string errIntro = "ERROR: Failed to read from file " + (std::string)srcPath
+            + " at line " + std::to_string(errorData.getLine());
+        perror(errIntro.c_str());
+        exit(-1);
+    }
+
+    //In this case the line is probably too long to fit
+    if (inputLine[maxLineSize - 2] != NULL) {
+        srcFile.clear();
+        srcFile.seekg(startOfLine);
+        srcFile.getline(inputLine, maxLineSize, ';');
+        if (!srcFile.good()) {
+            Error(errorData, ("Exceeding line length limit of " + std::to_string(maxLineSize)
+                + " characters. Comments are discarded automatically").c_str());
+        }
+        else {
+            srcFile.ignore(std::numeric_limits<std::streamsize>::max(), '\n');
+            return;
+        }
+    }
+
+    Error(errorData, "Failed to read file. Exact error is unknown");
+}
+
+
+
+
+
 inline static void GetArguments(const char* inputLine, argument* args) {
-    constexpr char registers[][6] = {
+    const char registers[][6] = {
     "al", "cl", "dl", "bl", "ah", "ch", "dh", "bh", "r8l", "r9l", "r10l", "r11l", "r12l", "r13l", "r14l", "r15l",
     "ax", "cx", "dx", "bx", "sp", "bp", "si", "di", "r8w", "r9w", "r10w", "r11w", "r12w", "r13w", "r14w", "r15w",
     "eax", "ecx", "edx", "ebx", "esp", "ebp", "esi", "edi", "r8d", "r9d", "r10d", "r11d", "r12d", "r13d", "r14d", "r15d",
@@ -98,7 +127,9 @@ static std::optional<instruction> isFittingInstruction(const pugi::xml_node& ent
 
 
     ubyte entryArgCounter = 0;
-    for (pugi::xml_node argNode = entry.child("syntax").first_child().next_sibling(); argNode.type() != pugi::node_null; argNode = argNode.next_sibling()) {
+    for (pugi::xml_node argNode = entry.child("syntax").first_child().next_sibling();
+        argNode.type() != pugi::node_null; argNode = argNode.next_sibling()) {
+
         argument& textArg = args[entryArgCounter];
 
 
@@ -212,6 +243,7 @@ inline static instruction FindInstruction(std::string& mnemonic, argument* args,
             }
         }
 
+        //Two byte opcodes not supported yet
         /*if (pri_opcd.first_attribute().as_int() == 0xFF)
             pri_opcd = one_byte.next_sibling().first_child();*/
     }
@@ -244,12 +276,9 @@ inline static void WriteToExe(std::ofstream& outFile, instruction instr) {
 
 
 
-void CompileSource(std::ofstream& outFile, std::ifstream& sourceFile, const char* srcPath, IMAGE_SECTION_HEADER (&sections)[]) {
+inline void CompileSource(std::ofstream& outFile, std::ifstream& srcFile, const char* srcPath, IMAGE_SECTION_HEADER (&sections)[]) {
     errorData.line = 0;
     errorData.path = srcPath;
-
-    if (!sourceFile.is_open())
-        Error(errorData, "Failed to open file");
 
 
     pugi::xml_document x86reference;
@@ -257,24 +286,24 @@ void CompileSource(std::ofstream& outFile, std::ifstream& sourceFile, const char
     pugi::xml_node one_byte = x86reference.first_child().first_child();
 
 
-    std::string inputLine;
-    inputLine.reserve(50);
+    char inputLine[maxLineSize];
 
-    while (!sourceFile.eof()) {
+    while (true) {
         errorData.line++;
 
-        getline(sourceFile, inputLine);
-        if (sourceFile.fail())
-            Error(errorData, "Failed to read source file. If the error is thrown at line 1, then your path may be wrong. '/' and '\\' are treated the same");
+        const fpos_t startOfLine = srcFile.tellg();
+        srcFile.getline(inputLine, maxLineSize);
 
+        if (srcFile.eof())
+            break;
+        if (!srcFile.good())
+            ProcessInputError(srcFile, srcPath, inputLine, startOfLine);
 
+        if (char* comment = strchr(inputLine, ';'))
+            *comment = NULL;
         if (!mrx::FindCharOfGroup('S', inputLine).has_value())
             continue;
 
-
-        size_t commentPos = inputLine.find(';');
-        if (commentPos != std::string::npos)
-            inputLine = inputLine.substr(0, commentPos--);
 
         std::optional<std::string> mnemonic = mrx::FindRgxSubstr(inputLine, "%a+");
         if (!mnemonic.has_value())
@@ -282,7 +311,7 @@ void CompileSource(std::ofstream& outFile, std::ifstream& sourceFile, const char
 
         instruction instr;
         argument args[2];
-        GetArguments(inputLine.c_str(), args);
+        GetArguments(inputLine, args);
 
         instr = FindInstruction(mnemonic.value(), args, one_byte);
         if (instr.dataSize + instr.immediateSize > 8)

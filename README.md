@@ -9,7 +9,7 @@ to make the program smaller and completely independent (except for the reference
 
 # Usage
 
-basm \<command> [\<options>] [\<file>] [\<file>...] [-o \<outputname>]
+basm \<command> [\<options>] [\<file> \<file>...]
 
 
 
@@ -19,6 +19,13 @@ basm \<command> [\<options>] [\<file>] [\<file>...] [-o \<outputname>]
    Displays help message
 2. compile<br>
    Compile all specified files
+
+
+
+## Executable
+
+The compiler does not include a linker. This means that if you want to create an executable,
+you will have to use another linker to link the resulting object files. Any linker should work.
 
 
 
@@ -54,7 +61,14 @@ The "extern" keyword marks the value as defined in another file.
 
 This section contains executable code.
 The syntax is derived from Intel's syntax, but has a few added functions:<br>
-[\<prefix>...] \<mnemonic> [\<arg>...] [; \<comment>]<br><br>
+[\<prefix>...] \<mnemonic> [\<arg> \<arg>...] [; \<comment>]<br><br>
 
 Apart from the standard arguments seen in Intel's syntax,
 basm also supports an array access shortcut from the language C: "pointer[index]".
+
+
+
+# P.S.
+
+The compiler is not finished and therefore does not create correctly compiled objects yet.
+All the functions described above may not work on the current version.
