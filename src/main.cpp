@@ -1,27 +1,34 @@
 #include "main.h"
 
 
-inline void Error(const char* message) {
-    std::cerr << "ERROR: " << message << ".\n\n";
+void Warning(const ErrorData errorData, const char* message) {
+    std::cout << "Warning: " << srcPathStr << " at line " << errorData.getLine() << ": " << message << ".\n\n";
+}
+
+
+[[noreturn]] void Error(const char* message) {
+    std::cerr << "ERROR: " << srcPathStr << ": " << message << ".\n\n";
     exit(-1);
 }
 
 
-inline void Error(const char* path, const char* message) {
+[[noreturn]] void Error(const char* path, const char* message) {
     std::cerr << "ERROR: " << path << ": " << message << ".\n\n";
     exit(-1);
 }
 
 
-inline void Error(const ErrorData& errorData, const char* message) {
-    std::cerr << "ERROR: " << errorData.getPath() << " at line " << errorData.getLine() << ": " << message << ".\n\n";
+[[noreturn]] void Error(const ErrorData errorData, const char* message) {
+    if (errorData.getLine() == 0)
+        Error(message);
+    std::cerr << "ERROR: " << srcPathStr << " at line " << errorData.getLine() << ": " << message << ".\n\n";
     exit(-1);
 }
 
 
-inline void CompilerError(const ErrorData& errorData, const char* message) {
-    std::cerr << "Compiler error: " << errorData.getPath() << " at line " << errorData.getLine() << ": "
-        << message << ". Please report this bug to the creators of this compiler.\n\n";
+[[noreturn]] void CompilerError(const ErrorData errorData, const char* message) {
+    std::cerr << "Compiler error: " << srcPathStr << " at line " << errorData.getLine() << ": "
+        << message << ". Please report the bug to the creators of this compiler.\n\n";
     exit(-1);
 }
 
@@ -29,15 +36,51 @@ inline void CompilerError(const ErrorData& errorData, const char* message) {
 
 
 
-std::optional<ubyte> findStringInArray(const char* string, const char* array, ushort arraySize, ubyte stringSize) {
-    for (ubyte stringI = 0; stringI < arraySize; stringI++) {
-        for (ubyte charI = 0; string[charI] == (array + (stringI * stringSize))[charI]; charI++) {
-            if ((array + (stringI * stringSize))[charI] == NULL) {
-                return stringI;
-            }
+void ProcessInputError(char* inputLine, const fpos_t startOfLine, const ErrorData& errorData) {
+    if (srcFile.bad()) {
+        std::string errIntro = "ERROR: Failed to read from file " + (std::string)srcPathStr
+            + " at line " + std::to_string(errorData.getLine());
+        perror(errIntro.c_str());
+        exit(-1);
+    }
+
+    //In this case the line is probably too long to fit
+    if (inputLine[maxLineSize - 1] != NULL) {
+        srcFile.clear();
+        srcFile.seekg(startOfLine);
+        srcFile.getline(inputLine, FPOSMAX, ';');
+        if (srcFile.fail()) {
+            Error(errorData, ("Exceeding line length limit of " + std::to_string(maxLineSize)
+                + " characters. Comments are discarded automatically").c_str());
+        }
+        else {
+            srcFile.ignore(std::numeric_limits<std::streamsize>::max(), '\n');
+            return;
         }
     }
+
+    Error(errorData, "Failed to read file. Exact error is unknown");
+}
+
+
+
+
+
+std::optional<ubyte> findStringInArray(const char* string, const char* array, const ushort arrayElementCount, const ubyte arrayStrLen) {
+    for (ubyte stringI = 0; stringI < arrayElementCount; stringI++) {
+        if (strcmp(string, array + (stringI* arrayStrLen)) == NULL)
+            return stringI;
+    }
     return std::nullopt;
+}
+
+
+
+
+
+inline bool hasAux(SymbolData* sym) {
+    const ubyte functionSize = 0;
+    return (sym->sectionNumber && sym->size == functionSize);
 }
 
 
@@ -51,21 +94,23 @@ inline static ubyte GetCommand(const ubyte argc, char** argv) {
     char* const command = new char[8];
     strcpy(command, argv[1]);
 
-    constexpr ubyte commandsSize = 8;
-    constexpr char commands[][commandsSize] = { "help", "-help", "--help", "compile"};
+    constexpr ubyte strSize = 8;
+    constexpr char commands[][strSize] = { "help", "-help", "--help", "compile" };
 
-    const std::optional<ubyte> _1 = findStringInArray(command, *commands, sizeof(commands), commandsSize);
-    if (!_1.has_value())
+    const std::optional<ubyte> commandI = findStringInArray(command, *commands, std::size(commands), strSize);
+    if (!commandI.has_value())
         Error("Unknown command");
 
-    return _1.value();
+    return *commandI;
 }
 
 
 
 
 
-bool long64bitMode = false;
+std::ofstream outFile;
+std::ifstream srcFile;
+const char* srcPathStr;
 
 int main(const ubyte argc, char* argv[]) {
     ubyte commandI = GetCommand(argc, argv);
@@ -85,35 +130,43 @@ int main(const ubyte argc, char* argv[]) {
             fs::path srcPath = outPath;
             outPath.replace_extension("o");
 
-            std::ofstream outFile(outPath);
+            const std::string srcPathString = srcPath.string();
+            srcPathStr = srcPathString.c_str();
+
+            outFile.open(outPath);
             if (!outFile.is_open())
                 Error((char*)outPath.c_str(), "Failed to create output file");
             outFile.seekp(0);
 
-            std::ifstream srcFile(srcPath);
+            srcFile.open(srcPath);
             if (!srcFile.is_open()) {
-                char errIntro[] = "ERROR: Failed to open file ";
+                char errIntro[] = "ERROR: Failed to open file";
                 perror(strcat(errIntro, (char*)srcPath.c_str()));
+                exit(-1);
             }
 
 
+            IMAGE_SECTION_HEADER sections[sectionCount + 1];
+            const ubyte coffHeaderSize = 20;
+            const ubyte sectionHeaderSize = 40;
+            sections[TEXT].mPointerToRawData = coffHeaderSize + (sectionCount * sectionHeaderSize);
 
-            IMAGE_SECTION_HEADER sections[sectionNumber];
-            sections[0].mPointerToRawData = coffHeaderSize + (sectionNumber * sectionHeaderSize);
 
+            SymbolScopeCount symbolCount = CountSymbols();
+            char* symtab = FindSymbols(symbolCount);
 
-            outFile.seekp(sections[0].mPointerToRawData);
-            CompileSource(outFile, srcFile, argv[fileI], sections);
+            outFile.seekp(sections[TEXT].mPointerToRawData);
+            CompileSource(sections);
 
             const fpos_t symtabPos = outFile.tellp();
-
-            srcFile.clear();
-            srcFile.seekg(0);
-            WriteSymbolTable(outFile, srcFile, (fs::path)argv[fileI], sections);
+            WriteSymbolTable(srcPath, sections, symtab, symbolCount);
             srcFile.close();
+            free(symtab);
 
-            WriteCOFFHeader(outFile, symtabPos, outFile.tellp());
-            WriteSectionTable(outFile, sections);
+            WriteCOFFHeader(symtabPos, outFile.tellp());
+            WriteSectionTable(sections);
+
+            outFile.close();
         }
     }
 

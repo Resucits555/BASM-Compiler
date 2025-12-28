@@ -21,42 +21,7 @@ enum class symbol_type : uint16_t {
     MS_IMAGE_SYM_TYPE_FUNCTION = 0x20
 };
 
-enum class symbol_class : uint8_t {
-    IMAGE_SYM_CLASS_NULL = 0x0,
-    IMAGE_SYM_CLASS_AUTOMATIC = 0x1,
-    IMAGE_SYM_CLASS_EXTERNAL = 0x2,
-    IMAGE_SYM_CLASS_STATIC = 0x3,
-    IMAGE_SYM_CLASS_REGISTER = 0x4,
-    IMAGE_SYM_CLASS_EXTERNAL_DEF = 0x5,
-    IMAGE_SYM_CLASS_LABEL = 0x6,
-    IMAGE_SYM_CLASS_UNDEFINED_LABEL = 0x7,
-    IMAGE_SYM_CLASS_MEMBER_OF_STRUCT = 0x8,
-    IMAGE_SYM_CLASS_ARGUMENT = 0x9,
-    IMAGE_SYM_CLASS_STRUCT_TAG = 0xa,
-    IMAGE_SYM_CLASS_MEMBER_OF_UNION = 0xb,
-    IMAGE_SYM_CLASS_UNION_TAG = 0xc,
-    IMAGE_SYM_CLASS_TYPE_DEFINITION = 0xd,
-    IMAGE_SYM_CLASS_UNDEFINED_STATIC = 0xe,
-    IMAGE_SYM_CLASS_ENUM_TAG = 0xf,
-    IMAGE_SYM_CLASS_MEMBER_OF_ENUM = 0x10,
-    IMAGE_SYM_CLASS_REGISTER_PARAM = 0x11,
-    IMAGE_SYM_CLASS_BIT_FIELD = 0x12,
-    IMAGE_SYM_CLASS_AUTOARG = 0x13,
-    IMAGE_SYM_CLASS_LASTENT = 0x14,
-    IMAGE_SYM_CLASS_BLOCK = 0x64,
-    IMAGE_SYM_CLASS_FUNCTION = 0x65,
-    IMAGE_SYM_CLASS_END_OF_STRUCT = 0x66,
-    IMAGE_SYM_CLASS_FILE = 0x67,
-    IMAGE_SYM_CLASS_SECTION = 0x68,
-    IMAGE_SYM_CLASS_WEAK_EXTERNAL = 0x69,
-    IMAGE_SYM_CLASS_HIDDEN = 0x6a,
-    IMAGE_SYM_CLASS_CLR_TOKEN = 0x6b,
-    IMAGE_SYM_CLASS_END_OF_FUNCTION = 0xff
-};
-
-//Do not use sizeof to determine size of COFF_Symbol struct
-const ubyte COFF_Symbol_Size = 18;
-
+#pragma pack(push, 2)
 struct COFF_Symbol {
     union {
         struct {
@@ -65,57 +30,37 @@ struct COFF_Symbol {
         } longName;
         char shortName[8] = "";
     } name;
-    uint32_t value;
-    int16_t sectionNumber;
-    enum symbol_type type;
-    enum symbol_class storageClass;
-    uint8_t numberOfAuxSymbols;
+    uint32_t value = 0;
+    int16_t sectionNumber = NOSECTION;
+    enum symbol_type type = symbol_type::IMAGE_SYM_TYPE_NULL;
+    enum symbol_class storageClass = symbol_class::IMAGE_SYM_CLASS_NULL;
+    uint8_t numberOfAuxSymbols = 0;
 };
 
 
 
 
 
-union auxFilename {
-    struct {
-        uint32_t zeroes;
-        uint32_t offset;
-    } longName;
-    char shortName[18];
-};
-
-
-
-
-
-// Auxiliary Symbol Formats
 struct AuxiliaryFunctionDefinition {
-    uint32_t TagIndex;
-    uint32_t TotalSize;
-    uint32_t PointerToLinenumber;
-    uint32_t PointerToNextFunction;
-    char unused[2];
+    uint32_t TagIndex = 0;
+    uint32_t TotalSize = 0;
+    uint32_t PointerToLinenumber = 0;
+    uint32_t PointerToNextFunction = 0;
+    uint8_t unused[2];
 };
 
 struct AuxiliarybfAndefSymbol {
     uint8_t unused1[4];
-    uint16_t Linenumber;
+    uint16_t Linenumber = 0;
     uint8_t unused2[6];
-    uint32_t PointerToNextFunction;
+    uint32_t PointerToNextFunction = 0;
     uint8_t unused3[2];
 };
 
 struct AuxiliaryWeakExternal {
-    uint32_t TagIndex;
-    uint32_t Characteristics;
+    uint32_t TagIndex = 0;
+    uint32_t Characteristics = 0;
     uint8_t unused[10];
-};
-
-enum WeakExternalCharacteristics : unsigned int {
-    IMAGE_WEAK_EXTERN_SEARCH_NOLIBRARY = 1,
-    IMAGE_WEAK_EXTERN_SEARCH_LIBRARY = 2,
-    IMAGE_WEAK_EXTERN_SEARCH_ALIAS = 3,
-    IMAGE_WEAK_EXTERN_ANTI_DEPENDENCY = 4
 };
 
 struct AuxiliarySectionDefinition {
@@ -125,12 +70,38 @@ struct AuxiliarySectionDefinition {
     uint32_t CheckSum = 0;
     uint32_t Number = 0;
     uint8_t Selection = 0;
-    char unused = 0;
+    uint8_t unused;
 };
 
 struct AuxiliaryCLRToken {
-    uint8_t AuxType;
+    uint8_t AuxType = 0;
     uint8_t unused1;
-    uint32_t SymbolTableIndex;
-    char unused2[12];
+    uint32_t SymbolTableIndex = 0;
+    uint8_t unused2[12];
+};
+#pragma pack(pop)
+
+
+
+
+
+enum coff_rel_type_amd64 : uint16_t
+{
+    IMAGE_REL_AMD64_ABSOLUTE = 0x0,
+    IMAGE_REL_AMD64_ADDR64 = 0x1,
+    IMAGE_REL_AMD64_ADDR32 = 0x2,
+    IMAGE_REL_AMD64_ADDR32NB = 0x3,
+    IMAGE_REL_AMD64_REL32 = 0x4,
+    IMAGE_REL_AMD64_REL32_1 = 0x5,
+    IMAGE_REL_AMD64_REL32_2 = 0x6,
+    IMAGE_REL_AMD64_REL32_3 = 0x7,
+    IMAGE_REL_AMD64_REL32_4 = 0x8,
+    IMAGE_REL_AMD64_REL32_5 = 0x9,
+    IMAGE_REL_AMD64_SECTION = 0xa,
+    IMAGE_REL_AMD64_SECREL = 0xb,
+    IMAGE_REL_AMD64_SECREL7 = 0xc,
+    IMAGE_REL_AMD64_TOKEN = 0xd,
+    IMAGE_REL_AMD64_SREL32 = 0xe,
+    IMAGE_REL_AMD64_PAIR = 0xf,
+    IMAGE_REL_AMD64_SSPAN32 = 0x10
 };

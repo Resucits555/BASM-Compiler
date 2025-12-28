@@ -1,11 +1,11 @@
 #include <pugixml.hpp>
-#include <mini-rgx.h>
+#include <regex>
 
 #include "main.h"
 #include "compilationData.h"
 
 
-ErrorData errorData;
+static ErrorData errorData;
 
 
 static ubyte minBitsToStoreValue(uintmax_t value, bool negative) {
@@ -19,153 +19,109 @@ static ubyte minBitsToStoreValue(uintmax_t value, bool negative) {
 
 
 
-inline static void ProcessInputError(std::ifstream& srcFile, const char* srcPath, char* inputLine, const fpos_t startOfLine) {
-    if (srcFile.bad()) {
-        std::string errIntro = "ERROR: Failed to read from file " + (std::string)srcPath
-            + " at line " + std::to_string(errorData.getLine());
-        perror(errIntro.c_str());
-        exit(-1);
-    }
-
-    //In this case the line is probably too long to fit
-    if (inputLine[maxLineSize - 2] != NULL) {
-        srcFile.clear();
-        srcFile.seekg(startOfLine);
-        srcFile.getline(inputLine, maxLineSize, ';');
-        if (!srcFile.good()) {
-            Error(errorData, ("Exceeding line length limit of " + std::to_string(maxLineSize)
-                + " characters. Comments are discarded automatically").c_str());
-        }
-        else {
-            srcFile.ignore(std::numeric_limits<std::streamsize>::max(), '\n');
-            return;
-        }
-    }
-
-    Error(errorData, "Failed to read file. Exact error is unknown");
-}
-
-
-
-
-
 inline static void GetArguments(const char* inputLine, argument* args) {
-    const char registers[][6] = {
-    "al", "cl", "dl", "bl", "ah", "ch", "dh", "bh", "r8l", "r9l", "r10l", "r11l", "r12l", "r13l", "r14l", "r15l",
-    "ax", "cx", "dx", "bx", "sp", "bp", "si", "di", "r8w", "r9w", "r10w", "r11w", "r12w", "r13w", "r14w", "r15w",
-    "eax", "ecx", "edx", "ebx", "esp", "ebp", "esi", "edi", "r8d", "r9d", "r10d", "r11d", "r12d", "r13d", "r14d", "r15d",
-    "rax", "rcx", "rdx", "rbx", "rsp", "rbp", "rsi", "rdi", "r8", "r9", "r10", "r11", "r12", "r13", "r14", "r15",
-    //"spl", "bpl", "sil", "dil"
-    /*"xmm0", "xmm1", "xmm2", "xmm3", "xmm4", "xmm5", "xmm6", "xmm7", "xmm8", "xmm9", "xmm10", "xmm11", "xmm12", "xmm13", "xmm14", "xmm15",
-    "ymm0", "ymm1", "ymm2", "ymm3", "ymm4", "ymm5", "ymm6", "ymm7", "ymm8", "ymm9", "ymm10", "ymm11", "ymm12", "ymm13", "ymm14", "ymm15",
-    "st0", "st1", "st2", "st3", "st4", "st5", "st6", "st7",
-    "mmx0", "mmx1", "mmx2", "mmx3", "mmx4", "mmx5", "mmx6", "mmx7"*/
-    };
-
-
-    char* tokenizedInput = (char*)malloc(strlen(inputLine) + 1);
-    if (tokenizedInput == nullptr)
-        Error("\"malloc\" function failed");
-
-    strcpy(tokenizedInput, inputLine);
-
-    const char delimiters[] = " \t,.";
-    (void)strtok(tokenizedInput, delimiters);
-
-    const char* argstr = strtok(nullptr, delimiters);
-    for (sbyte i = 0; argstr != nullptr; i++) {
-        if (i >= 2)
-            Error(errorData, "Invalid arguments");
+    for (sbyte i = 0; i <= 2; i++) {
+        const char* argstr = strtok(nullptr, instrDelimiters);
+        if (argstr == nullptr)
+            return;
 
         argument& arg = args[i];
-
-        if (!mrx::FindRgx(argstr, "%D").has_value()) {
+        if (std::regex_search(argstr, std::regex("\\D"))) {
+            const ubyte strSize = 5;
+            const char registers[][strSize] = {
+            "al", "cl", "dl", "bl", "ah", "ch", "dh", "bh", "r8l", "r9l", "r10l", "r11l", "r12l", "r13l", "r14l", "r15l",
+            "ax", "cx", "dx", "bx", "sp", "bp", "si", "di", "r8w", "r9w", "r10w", "r11w", "r12w", "r13w", "r14w", "r15w",
+            "eax", "ecx", "edx", "ebx", "esp", "ebp", "esi", "edi", "r8d", "r9d", "r10d", "r11d", "r12d", "r13d", "r14d", "r15d",
+            "rax", "rcx", "rdx", "rbx", "rsp", "rbp", "rsi", "rdi", "r8", "r9", "r10", "r11", "r12", "r13", "r14", "r15",
+            //"spl", "bpl", "sil", "dil"
+            /*"xmm0", "xmm1", "xmm2", "xmm3", "xmm4", "xmm5", "xmm6", "xmm7", "xmm8", "xmm9", "xmm10", "xmm11", "xmm12", "xmm13", "xmm14", "xmm15",
+            "ymm0", "ymm1", "ymm2", "ymm3", "ymm4", "ymm5", "ymm6", "ymm7", "ymm8", "ymm9", "ymm10", "ymm11", "ymm12", "ymm13", "ymm14", "ymm15",
+            "st0", "st1", "st2", "st3", "st4", "st5", "st6", "st7",
+            "mmx0", "mmx1", "mmx2", "mmx3", "mmx4", "mmx5", "mmx6", "mmx7"*/
+            };
+            std::optional<ubyte> reg = findStringInArray(argstr, *registers, std::size(registers), strSize);
+            if (reg.has_value())
+                arg = { 'r', false, (ubyte)(pow(2, *reg >> 4) * 8), false, (ubyte)(*reg % 16) };
+        }
+        else {
             arg.type = 'I';
             if (*argstr == '-')
                 arg.negative = true;
-            arg.variableSize = true;
+            arg.mutableSize = true;
             arg.val = std::stoull(argstr, nullptr, 0);
         }
-        else {
-            std::optional<ubyte> reg = findStringInArray(argstr, *registers, sizeof(registers) / sizeof(*registers), sizeof(*registers));
-            if (reg.has_value())
-                arg = { 'r', false, (ubyte)(pow(2, reg.value() >> 4) * 8), false, (ubyte)(reg.value() % 16) };
-        }
-
-        argstr = strtok(nullptr, delimiters);
     }
 
-    free(tokenizedInput);
+    Error(errorData, "Invalid arguments");
 }
 
 
 
 
 
-//Returns instruction data if it has fitting arguments and other criteria, otherwise returns null
-static std::optional<instruction> isFittingInstruction(const pugi::xml_node& entry, argument* args) {
-    constexpr ubyte operandSizePrefix = 0x66;
-    constexpr ubyte addressSizePrefix = 0x67;
+//Returns instruction data if it has fitting arguments etc., otherwise returns nullopt
+static std::optional<instruction> isFittingInstruction(const pugi::xml_node pri_opcd, const pugi::xml_node syntax, argument* args) {
+    const ubyte operandSizePrefix = 0x66;
+    const ubyte addressSizePrefix = 0x67;
+
     struct REX {
-        const ubyte _ = 0x40; const ubyte B = 0x41; const ubyte X = 0x42; const ubyte R = 0x44; const ubyte W = 0x48;
+        ubyte _ = 0x40; ubyte B = 0x41; ubyte X = 0x42; ubyte R = 0x44; ubyte W = 0x48;
     };
-    constexpr REX REX;
+    const REX REX;
 
     instruction instr;
-    if (strcmp(entry.parent().parent().name(), "two-byte") == 0) {
-        std::cout << entry.parent().parent().name();
+    if (strcmp(pri_opcd.parent().name(), "two-byte") == 0) {
+        std::cout << syntax.parent().parent().parent().name();
         instr.opcode[0] = 0x0F;
         instr.primaryOpcodeIndex++;
     }
 
     ubyte& po = instr.opcode[instr.primaryOpcodeIndex];
 
-    po = std::stoi(entry.parent().first_attribute().value(), nullptr, 16);
+    po = std::stoi(pri_opcd.first_attribute().value(), nullptr, 16);
     
     ubyte textArgCounter = 0;
     for (;textArgCounter < 2 && args[textArgCounter].type != NULL; textArgCounter++);
 
+    instr.modrm = 0b11000000;
+
 
     ubyte entryArgCounter = 0;
-    for (pugi::xml_node argNode = entry.child("syntax").first_child().next_sibling();
+    for (pugi::xml_node argNode = syntax.first_child().next_sibling();
         argNode.type() != pugi::node_null; argNode = argNode.next_sibling()) {
 
         argument& textArg = args[entryArgCounter];
 
 
-        char addressing[4] = "";
+        char addressing[4];
         strcpy(addressing, argNode.first_child().child_value());
 
         if (addressing[1] != NULL)
-            return std::nullopt;
+            Error(errorData, "Compiler does not support this type of instruction yet");
 
         switch (textArg.type) {
         case 'r':
             switch (addressing[0]) {
+            default:
+                return std::nullopt;
             case 'E':
             case 'H':
+            case 'R':
                 instr.modrmUsed = true;
-                instr.modrm |= (0b11 << 6) | textArg.val;
+                instr.modrm |= textArg.val;
                 break;
             case 'G':
                 instr.modrmUsed = true;
                 instr.modrm |= textArg.val << 3;
                 break;
-            case 'R': //this could be wrong but that's how I understood the description of 'R' (using the mod part to reference register)
-                instr.modrmUsed = true;
-                instr.modrm |= textArg.val << 6;
-                break;
             case 'Z':
                 po += textArg.val;
-                break;
-            default:
-                return std::nullopt;
             }
             break;
         case 'I':
             if (addressing[0] != 'I')
                 return std::nullopt;
-            if (textArg.variableSize)
+            if (textArg.mutableSize)
                 textArg.size = args[~entryArgCounter & 1].size;
 
             instr.immediate = textArg.val;
@@ -173,35 +129,34 @@ static std::optional<instruction> isFittingInstruction(const pugi::xml_node& ent
         }
 
 
-        char type[4] = "";
+        char type[4];
         strcpy(type, argNode.first_child().next_sibling().child_value());
 
         const ubyte arrayI = log2(textArg.size / 8);
-        if (arrayI == 3 && !long64bitMode)
-            Error(errorData, "Invalid instruction in 32bit mode");
 
 
-        constexpr char _8[][4] = { "b", "bs", "bss" };
-        constexpr ubyte _8req[3] = {};
-        constexpr char _16[][4] = { "a", "v", "vds", "vq", "vqp", "vs", "w", "wi", "va", "wa", "wo", "ws" };
-        constexpr ubyte _16req[12] = { SHRINK | DOUBLED, SHRINK, SHRINK, SHRINK, SHRINK, SHRINK, 0, 0, NOSHRINK };
-        constexpr char _32[][4] = { "a", "d", "di", "dqp", "ds", "p", "ptp", "sr", "v", "vds", "vqp", "vs", "va", "dqa", "da", "do" };
-        constexpr ubyte _32req[16] = { NOSHRINK | DOUBLED, 0, 0, 0, 0, SHRINK, SHRINK, 0, NOSHRINK, NOSHRINK, NOSHRINK, NOSHRINK, ADDRESS };
-        constexpr char _64[][4] = { "dqp", "dr", "pi", "psq", "q", "qi", "qp", "vqp", "dqa", "qa", "qs" };
-        constexpr ubyte _64req[11] = { REXW, 0, 0, 0, 0, 0, REXW, REXW, ADDRESS };
+        const ubyte strSize = 4;
+        const char _8[][strSize] = {"b", "bs", "bss"};
+        const ubyte _8req[3] = {};
+        const char _16[][strSize] = {"a", "v", "vds", "vq", "vqp", "vs", "w", "wi", "va", "wa", "wo", "ws"};
+        const ubyte _16req[12] = { SHRINK | DOUBLED, SHRINK, SHRINK, SHRINK, SHRINK, SHRINK, 0, 0, NOSHRINK };
+        const char _32[][strSize] = {"a", "d", "di", "dqp", "ds", "p", "ptp", "sr", "v", "vds", "vqp", "vs", "va", "dqa", "da", "do"};
+        const ubyte _32req[16] = { NOSHRINK | DOUBLED, 0, 0, 0, 0, SHRINK, SHRINK, 0, NOSHRINK, NOSHRINK, NOSHRINK, NOSHRINK, ADDRESS };
+        const char _64[][strSize] = {"dqp", "dr", "pi", "psq", "q", "qi", "qp", "vqp", "dqa", "qa", "qs"};
+        const ubyte _64req[11] = { REXW, 0, 0, 0, 0, 0, REXW, REXW, ADDRESS };
 
         const char* const operands[] = { *_8, *_16, *_32, *_64 };
-        const ubyte* const reqArrays[] = { _8req, _16req, _32req, _64req };
-        constexpr ubyte arraySizes[] = { 3, 12, 16, 11 };
+        const ubyte* const requirements[] = { _8req, _16req, _32req, _64req };
+        constexpr ubyte arraySizes[] = { std::size(_8), std::size(_16), std::size(_32), std::size(_64)};
 
-        const std::optional<ubyte> operandI = findStringInArray(type, operands[arrayI], arraySizes[arrayI], 4);
+        const std::optional<ubyte> operandI = findStringInArray(type, operands[arrayI], arraySizes[arrayI], strSize);
         if (!operandI.has_value())
             return std::nullopt;
 
-        const ubyte requirement = reqArrays[arrayI][operandI.value()];
+        const ubyte requirement = requirements[arrayI][*operandI];
 
         if (requirement) {
-            constexpr ubyte prefixValues[3] = {operandSizePrefix, addressSizePrefix, REX.W};
+            const ubyte prefixValues[3] = { operandSizePrefix, addressSizePrefix, REX.W };
             for (ubyte reqI = 1; reqI < NOSHRINK; reqI++) {
                 if ((requirement & 0x7) == reqI && std::find(instr.prefixes, instr.prefixes + 4, prefixValues[reqI - 1]) == instr.prefixes + 4)
                     instr.addPrefix(prefixValues[reqI - 1]);
@@ -226,32 +181,35 @@ static std::optional<instruction> isFittingInstruction(const pugi::xml_node& ent
 
 
 
-inline static instruction FindInstruction(std::string& mnemonic, argument* args, const pugi::xml_node& one_byte) {
-    for (ubyte chr = 0; chr < mnemonic.size(); chr++)
+inline static instruction FindInstruction(char* mnemonic, argument* args, const pugi::xml_node& one_byte) {
+    const ubyte mnemonicLen = strlen(mnemonic);
+    for (ubyte chr = 0; chr < mnemonicLen; chr++)
         mnemonic[chr] = std::toupper(mnemonic[chr]);
 
     std::optional<instruction> bestInstrFound;
 
     for (auto pri_opcd = one_byte.first_child(); pri_opcd.type() != pugi::node_null; pri_opcd = pri_opcd.next_sibling()) {
         for (auto entry = pri_opcd.first_child(); entry.type() != pugi::node_null; entry = entry.next_sibling()) {
-            if (mnemonic == entry.child("syntax").first_child().child_value()) {
-                auto newInstruction = isFittingInstruction(entry, args);
-                if (!newInstruction.has_value())
-                    continue;
-                bestInstrFound = newInstruction.value();
-                return bestInstrFound.value();
+            for (auto syntax = entry.first_child(); strcmp(syntax.name(), "syntax") == 0; syntax = syntax.next_sibling()) {
+                if (strcmp(mnemonic, syntax.first_child().child_value()) == 0) {
+                    std::optional<instruction> newInstruction = isFittingInstruction(pri_opcd, syntax, args);
+                    if (!newInstruction.has_value())
+                        continue;
+
+                    bestInstrFound = newInstruction;
+                    return bestInstrFound.value();
+                }
             }
         }
 
-        //Two byte opcodes not supported yet
-        /*if (pri_opcd.first_attribute().as_int() == 0xFF)
-            pri_opcd = one_byte.next_sibling().first_child();*/
+        if (pri_opcd.first_attribute().as_int() == 0xFF)
+            pri_opcd = one_byte.next_sibling().first_child();
     }
 
     if (!bestInstrFound.has_value())
-        Error(errorData, "No fitting opcode found. Check the instruction's arguments, one of them could be too big or too small, or just invalid for this instruction");
+        Error(errorData, "No fitting opcode found. One of the instruction's arguments could be invalid for this instruction");
 
-    return bestInstrFound.value();
+    return *bestInstrFound;
 }
 
 
@@ -259,7 +217,7 @@ inline static instruction FindInstruction(std::string& mnemonic, argument* args,
 
 
 inline static void WriteToExe(std::ofstream& outFile, instruction instr) {
-    outFile.write((char*)&instr.prefixes, instr.getLastPrefixIndex() + 1);
+    outFile.write((char*)&instr.prefixes, instr.getNextPrefixIndex());
 
     outFile.write((char*)&instr.opcode, instr.primaryOpcodeIndex + 1);
 
@@ -268,7 +226,6 @@ inline static void WriteToExe(std::ofstream& outFile, instruction instr) {
     if (instr.sibUsed)
         outFile.put(instr.sib);
     
-    outFile.write((char*)&instr.data, instr.dataSize);
     outFile.write((char*)&instr.immediate, instr.immediateSize);
 }
 
@@ -276,50 +233,59 @@ inline static void WriteToExe(std::ofstream& outFile, instruction instr) {
 
 
 
-inline void CompileSource(std::ofstream& outFile, std::ifstream& srcFile, const char* srcPath, IMAGE_SECTION_HEADER (&sections)[]) {
-    errorData.line = 0;
-    errorData.path = srcPath;
-
+inline void CompileSource(IMAGE_SECTION_HEADER (&sections)[]) {
+    srcFile.seekg(0);
 
     pugi::xml_document x86reference;
     x86reference.load_file("../data/x86reference-master/x86reference.xml");
     pugi::xml_node one_byte = x86reference.first_child().first_child();
 
+    errorData = {};
+    char inputLine[maxLineSize] = "";
+    bool inTextSection = false;
 
-    char inputLine[maxLineSize];
-
-    while (true) {
-        errorData.line++;
+    while (!srcFile.eof()) {
+        errorData.incLine();
 
         const fpos_t startOfLine = srcFile.tellg();
-        srcFile.getline(inputLine, maxLineSize);
+        srcFile.getline(inputLine, FPOSMAX);
 
-        if (srcFile.eof())
-            break;
-        if (!srcFile.good())
-            ProcessInputError(srcFile, srcPath, inputLine, startOfLine);
+        if (srcFile.fail())
+            ProcessInputError(inputLine, startOfLine, errorData);
+
+        if (strncmp(inputLine, "section", 7) == 0) {
+            if (inTextSection) {
+                break;
+            }
+            else if (strncmp(inputLine, "section .text", 13) == 0) {
+                inTextSection = true;
+                continue;
+            }
+        }
+        
+        if (!inTextSection)
+            continue;
 
         if (char* comment = strchr(inputLine, ';'))
             *comment = NULL;
-        if (!mrx::FindCharOfGroup('S', inputLine).has_value())
+        if (!std::regex_search(inputLine, std::regex("\\S")))
+            continue;
+        if (strchr(inputLine, ':'))
             continue;
 
 
-        std::optional<std::string> mnemonic = mrx::FindRgxSubstr(inputLine, "%a+");
-        if (!mnemonic.has_value())
-            Error(errorData, "Invalid characters");
+        char* mnemonic = strtok(inputLine, instrDelimiters);
+        if (strncmp(mnemonic, "extern", 7) == 0)
+            continue;
 
         instruction instr;
         argument args[2];
         GetArguments(inputLine, args);
 
-        instr = FindInstruction(mnemonic.value(), args, one_byte);
-        if (instr.dataSize + instr.immediateSize > 8)
-            CompilerError(errorData, "Sum of disp and imm sizes is more than 8 bytes");
+        instr = FindInstruction(mnemonic, args, one_byte);
 
         WriteToExe(outFile, instr);
     }
-
-    outFile.put(0xC3);
-    sections[0].mSizeOfRawData = (uint32_t)outFile.tellp() - sections[0].mPointerToRawData;
+    
+    sections[TEXT].mSizeOfRawData = (uint32_t)outFile.tellp() - sections[TEXT].mPointerToRawData;
 }

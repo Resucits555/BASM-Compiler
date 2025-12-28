@@ -1,23 +1,25 @@
 #pragma once
 
-//Abbreviations in this code come from http://ref.x86asm.net/index.html#Instruction-Operand-Codes
-//The table found at that website was copied into an xml file, which is used here as an opcode reference.
-//https://wiki.osdev.org/X86-64_Instruction_Encoding is the primary source of information for this project.
+
+const char instrDelimiters[] = " \t,.";
+
+
+
 
 
 struct argument {
     char type = NULL;
-    bool variableSize = false;
+    bool mutableSize = false;
     ubyte size = 0;
     bool negative = false;
-    uintmax_t val = 0;
+    uint64_t val = 0;
 };
 
 
 
 
 class instruction {
-    sbyte lastPrefixIndex = -1;
+    ubyte nextPrefixIndex = 0;
 public:
     ubyte prefixes[4] = {};
 
@@ -29,17 +31,17 @@ public:
     ubyte sib = 0;
     bool sibUsed = false;
 
-    ubyte dataSize = 0;
+    ubyte dispSize = 0;
     ubyte immediateSize = 0;
-    uint64_t data = 0; //used for displacement values and direct addresses
     uint64_t immediate = 0;
 
     void addPrefix(const ubyte& prefix) {
-        prefixes[lastPrefixIndex++] = prefix;
+        prefixes[nextPrefixIndex] = prefix;
+        nextPrefixIndex++;
     }
 
-    sbyte getLastPrefixIndex() const {
-        return lastPrefixIndex;
+    sbyte getNextPrefixIndex() const {
+        return nextPrefixIndex;
     }
 };
 
@@ -47,9 +49,9 @@ public:
 
 
 enum requirements {
-    SHRINK = 1,
-    ADDRESS, //shrink with the address-size prefix instead of the operand-size prefix
-    REXW,
-    NOSHRINK, //both address and operand prefixes
-    DOUBLED = 8 //only 'a' type
+    SHRINK = 1,   //needs operand size prefix
+    ADDRESS = 2,  //needs address size prefix
+    REXW = 3,     //needs REXW prefix
+    NOSHRINK = 4, //no size modifying allowed
+    DOUBLED = 8   //see 'a' operand type
 };

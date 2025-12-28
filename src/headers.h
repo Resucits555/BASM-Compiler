@@ -54,7 +54,7 @@ struct COFF_Header {
     uint32_t pointerToSymbolTable = 0;
     uint32_t numberOfSymbols = 0;
     uint16_t sizeOfOptionalHeader = 0;
-    uint16_t characteristics = IMAGE_FILE_RELOCS_STRIPPED | IMAGE_FILE_LINE_NUMS_STRIPPED | IMAGE_FILE_LOCAL_SYMS_STRIPPED;
+    uint16_t characteristics = IMAGE_FILE_RELOCS_STRIPPED | IMAGE_FILE_LINE_NUMS_STRIPPED;
 };
 
 
