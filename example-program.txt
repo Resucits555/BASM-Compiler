@@ -1,0 +1,18 @@
+section .data
+	word staticInit = 1
+	global word globalInit = 1
+
+section .bss
+	word staticVar
+	extern word externVar
+	
+section .text
+	extern externFunc
+
+	static staticFunc:
+	mov eax, ecx
+	ret
+
+	global globalFunc:
+	;Function definition
+	ret
