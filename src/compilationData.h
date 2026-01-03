@@ -36,7 +36,7 @@ class instruction {
 public:
     ubyte prefixes[4] = {};
 
-    ubyte opcode[3] = {}; //an opcode can be up to 3 bytes in size
+    ubyte opcode[3] = {};
     ubyte primaryOpcodeIndex = 0;
 
     ubyte modrm = 0;
@@ -55,6 +55,10 @@ public:
 
     sbyte getNextPrefixIndex() const {
         return nextPrefixIndex;
+    }
+
+    ubyte size() const {
+        return nextPrefixIndex + (primaryOpcodeIndex + 1) + modrmUsed + sibUsed + dispSize + immediateSize;
     }
 };
 
