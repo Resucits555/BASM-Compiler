@@ -1,5 +1,6 @@
 #include <pugixml.hpp>
 #include <regex>
+#include <cmath>
 
 #include "main.h"
 #include "compilationData.h"
@@ -18,30 +19,43 @@ static ubyte minBitsToStoreValue(uintmax_t value, bool negative) {
 
 
 
+static argument getArgument(char* argstr) {
+    for (ubyte chr = 0; chr < strlen(argstr); chr++)
+        argstr[chr] = std::tolower(argstr[chr]);
 
-inline static void GetArguments(const char* inputLine, argument* args) {
+    const ubyte strSize = 5;
+    const char registers[][strSize] = {
+    "al", "cl", "dl", "bl", "ah", "ch", "dh", "bh", "r8l", "r9l", "r10l", "r11l", "r12l", "r13l", "r14l", "r15l",
+    "ax", "cx", "dx", "bx", "sp", "bp", "si", "di", "r8w", "r9w", "r10w", "r11w", "r12w", "r13w", "r14w", "r15w",
+    "eax", "ecx", "edx", "ebx", "esp", "ebp", "esi", "edi", "r8d", "r9d", "r10d", "r11d", "r12d", "r13d", "r14d", "r15d",
+    "rax", "rcx", "rdx", "rbx", "rsp", "rbp", "rsi", "rdi", "r8", "r9", "r10", "r11", "r12", "r13", "r14", "r15",
+    //"spl", "bpl", "sil", "dil"
+    /*"xmm0", "xmm1", "xmm2", "xmm3", "xmm4", "xmm5", "xmm6", "xmm7", "xmm8", "xmm9", "xmm10", "xmm11", "xmm12", "xmm13", "xmm14", "xmm15",
+    "ymm0", "ymm1", "ymm2", "ymm3", "ymm4", "ymm5", "ymm6", "ymm7", "ymm8", "ymm9", "ymm10", "ymm11", "ymm12", "ymm13", "ymm14", "ymm15",
+    "st0", "st1", "st2", "st3", "st4", "st5", "st6", "st7",
+    "mmx0", "mmx1", "mmx2", "mmx3", "mmx4", "mmx5", "mmx6", "mmx7"*/
+    };
+    std::optional<ubyte> reg = findStringInArray(argstr, *registers, std::size(registers), strSize);
+    if (!reg.has_value())
+        //Remove when the other registers are supported too
+        Error(errorData, "Invalid argument. Note that only standard registers from al to r15 are supported in this version");
+
+    return { 'r', false, (ubyte)(pow(2, *reg >> 4) * 8), false, (ubyte)(*reg % 16) };
+}
+
+
+
+
+
+inline static void GetArguments(char* inputLine, argument* args) {
     for (sbyte i = 0; i <= 2; i++) {
-        const char* argstr = strtok(nullptr, instrDelimiters);
+        char* argstr = strtok(nullptr, instrDelimiters);
         if (argstr == nullptr)
             return;
 
         argument& arg = args[i];
         if (std::regex_search(argstr, std::regex("\\D"))) {
-            const ubyte strSize = 5;
-            const char registers[][strSize] = {
-            "al", "cl", "dl", "bl", "ah", "ch", "dh", "bh", "r8l", "r9l", "r10l", "r11l", "r12l", "r13l", "r14l", "r15l",
-            "ax", "cx", "dx", "bx", "sp", "bp", "si", "di", "r8w", "r9w", "r10w", "r11w", "r12w", "r13w", "r14w", "r15w",
-            "eax", "ecx", "edx", "ebx", "esp", "ebp", "esi", "edi", "r8d", "r9d", "r10d", "r11d", "r12d", "r13d", "r14d", "r15d",
-            "rax", "rcx", "rdx", "rbx", "rsp", "rbp", "rsi", "rdi", "r8", "r9", "r10", "r11", "r12", "r13", "r14", "r15",
-            //"spl", "bpl", "sil", "dil"
-            /*"xmm0", "xmm1", "xmm2", "xmm3", "xmm4", "xmm5", "xmm6", "xmm7", "xmm8", "xmm9", "xmm10", "xmm11", "xmm12", "xmm13", "xmm14", "xmm15",
-            "ymm0", "ymm1", "ymm2", "ymm3", "ymm4", "ymm5", "ymm6", "ymm7", "ymm8", "ymm9", "ymm10", "ymm11", "ymm12", "ymm13", "ymm14", "ymm15",
-            "st0", "st1", "st2", "st3", "st4", "st5", "st6", "st7",
-            "mmx0", "mmx1", "mmx2", "mmx3", "mmx4", "mmx5", "mmx6", "mmx7"*/
-            };
-            std::optional<ubyte> reg = findStringInArray(argstr, *registers, std::size(registers), strSize);
-            if (reg.has_value())
-                arg = { 'r', false, (ubyte)(pow(2, *reg >> 4) * 8), false, (ubyte)(*reg % 16) };
+            arg = getArgument(argstr);
         }
         else {
             arg.type = 'I';
@@ -49,26 +63,75 @@ inline static void GetArguments(const char* inputLine, argument* args) {
                 arg.negative = true;
             arg.mutableSize = true;
             arg.val = std::stoull(argstr, nullptr, 0);
+            arg.size = ceil(minBitsToStoreValue(arg.val, arg.negative) / 8.);
         }
     }
 
-    Error(errorData, "Invalid arguments");
+    Error(errorData, "Invalid argument");
 }
 
 
 
 
 
+inline static bool isCorrectType(argument& textArg, pugi::xml_node argNode, instruction& instr) {
+    char type[4];
+    strcpy(type, argNode.first_child().next_sibling().child_value());
+
+    ubyte arrayI = log2(textArg.size / 8);
+
+
+    const ubyte strSize = 4;
+    const char _8[][strSize] = { "b", "bs", "bss" };
+    const ubyte _8req[3] = {};
+    const char _16[][strSize] = { "a", "v", "vds", "vq", "vqp", "vs", "w", "wi", "va", "wa", "wo", "ws" };
+    const ubyte _16req[12] = { SHRINK | DOUBLED, SHRINK, SHRINK, SHRINK, SHRINK, SHRINK, 0, 0, NOSHRINK };
+    const char _32[][strSize] = { "a", "d", "di", "dqp", "ds", "p", "ptp", "sr", "v", "vds", "vqp", "vs", "va", "dqa", "da", "do" };
+    const ubyte _32req[16] = { NOSHRINK | DOUBLED, 0, 0, 0, 0, SHRINK, SHRINK, 0, NOSHRINK, NOSHRINK, NOSHRINK, NOSHRINK, ADDRESS };
+    const char _64[][strSize] = { "dqp", "dr", "pi", "psq", "q", "qi", "qp", "vqp", "dqa", "qa", "qs" };
+    const ubyte _64req[11] = { REXW, 0, 0, 0, 0, 0, REXW, REXW, ADDRESS };
+
+    const char* const operands[] = { *_8, *_16, *_32, *_64 };
+    const ubyte* const requirements[] = { _8req, _16req, _32req, _64req };
+    constexpr ubyte arraySizes[] = { std::size(_8), std::size(_16), std::size(_32), std::size(_64) };
+
+    retry:
+    const std::optional<ubyte> operandI = findStringInArray(type, operands[arrayI], arraySizes[arrayI], strSize);
+    if (!operandI.has_value()) {
+        if (textArg.mutableSize && arrayI < 3) {
+            arrayI++;
+            goto retry;
+        }
+        return false;
+    }
+
+    if (textArg.type == 'I')
+        instr.immediateSize = pow(2, arrayI);
+
+
+    const ubyte requirement = requirements[arrayI][*operandI];
+
+    if (requirement) {
+        const ubyte prefixValues[3] = { operandSizePrefix, addressSizePrefix, REX.W };
+        for (ubyte reqI = 1; reqI < NOSHRINK; reqI++) {
+            if ((requirement & 0x7) == reqI && std::find(instr.prefixes, instr.prefixes + 4, prefixValues[reqI - 1]) == instr.prefixes + 4)
+                instr.addPrefix(prefixValues[reqI - 1]);
+        }
+
+        if (requirement & NOSHRINK) {
+            if (std::find(instr.prefixes, instr.prefixes + 4, operandSizePrefix) != instr.prefixes + 4
+                || std::find(instr.prefixes, instr.prefixes + 4, addressSizePrefix) != instr.prefixes + 4)
+                return false;
+        }
+    }
+
+    return true;
+}
+
+
+
 //Returns instruction data if it has fitting arguments etc., otherwise returns nullopt
 static std::optional<instruction> isFittingInstruction(const pugi::xml_node pri_opcd, const pugi::xml_node syntax, argument* args) {
-    const ubyte operandSizePrefix = 0x66;
-    const ubyte addressSizePrefix = 0x67;
-
-    struct REX {
-        ubyte _ = 0x40; ubyte B = 0x41; ubyte X = 0x42; ubyte R = 0x44; ubyte W = 0x48;
-    };
-    const REX REX;
-
     instruction instr;
     if (strcmp(pri_opcd.parent().name(), "two-byte") == 0) {
         std::cout << syntax.parent().parent().parent().name();
@@ -94,6 +157,18 @@ static std::optional<instruction> isFittingInstruction(const pugi::xml_node pri_
 
 
         char addressing[4];
+        if (!argNode.first_attribute().empty()) {
+            if (*argNode.child_value() == 'S')
+                continue;
+            strcpy(addressing, argNode.child_value());
+            argument entryArg = getArgument(addressing);
+            if (entryArg != textArg)
+                return std::nullopt;
+
+            entryArgCounter++;
+            continue;
+        }
+
         strcpy(addressing, argNode.first_child().child_value());
 
         if (addressing[1] != NULL)
@@ -119,55 +194,14 @@ static std::optional<instruction> isFittingInstruction(const pugi::xml_node pri_
             }
             break;
         case 'I':
-            if (addressing[0] != 'I')
+            if (*addressing != 'I')
                 return std::nullopt;
-            if (textArg.mutableSize)
-                textArg.size = args[~entryArgCounter & 1].size;
-
             instr.immediate = textArg.val;
-            instr.immediateSize = textArg.size / 8;
         }
 
 
-        char type[4];
-        strcpy(type, argNode.first_child().next_sibling().child_value());
-
-        const ubyte arrayI = log2(textArg.size / 8);
-
-
-        const ubyte strSize = 4;
-        const char _8[][strSize] = {"b", "bs", "bss"};
-        const ubyte _8req[3] = {};
-        const char _16[][strSize] = {"a", "v", "vds", "vq", "vqp", "vs", "w", "wi", "va", "wa", "wo", "ws"};
-        const ubyte _16req[12] = { SHRINK | DOUBLED, SHRINK, SHRINK, SHRINK, SHRINK, SHRINK, 0, 0, NOSHRINK };
-        const char _32[][strSize] = {"a", "d", "di", "dqp", "ds", "p", "ptp", "sr", "v", "vds", "vqp", "vs", "va", "dqa", "da", "do"};
-        const ubyte _32req[16] = { NOSHRINK | DOUBLED, 0, 0, 0, 0, SHRINK, SHRINK, 0, NOSHRINK, NOSHRINK, NOSHRINK, NOSHRINK, ADDRESS };
-        const char _64[][strSize] = {"dqp", "dr", "pi", "psq", "q", "qi", "qp", "vqp", "dqa", "qa", "qs"};
-        const ubyte _64req[11] = { REXW, 0, 0, 0, 0, 0, REXW, REXW, ADDRESS };
-
-        const char* const operands[] = { *_8, *_16, *_32, *_64 };
-        const ubyte* const requirements[] = { _8req, _16req, _32req, _64req };
-        constexpr ubyte arraySizes[] = { std::size(_8), std::size(_16), std::size(_32), std::size(_64)};
-
-        const std::optional<ubyte> operandI = findStringInArray(type, operands[arrayI], arraySizes[arrayI], strSize);
-        if (!operandI.has_value())
+        if (!isCorrectType(textArg, argNode, instr))
             return std::nullopt;
-
-        const ubyte requirement = requirements[arrayI][*operandI];
-
-        if (requirement) {
-            const ubyte prefixValues[3] = { operandSizePrefix, addressSizePrefix, REX.W };
-            for (ubyte reqI = 1; reqI < NOSHRINK; reqI++) {
-                if ((requirement & 0x7) == reqI && std::find(instr.prefixes, instr.prefixes + 4, prefixValues[reqI - 1]) == instr.prefixes + 4)
-                    instr.addPrefix(prefixValues[reqI - 1]);
-            }
-
-            if (requirement & NOSHRINK) {
-                if (std::find(instr.prefixes, instr.prefixes + 4, operandSizePrefix) != instr.prefixes + 4
-                    || std::find(instr.prefixes, instr.prefixes + 4, addressSizePrefix) != instr.prefixes + 4)
-                    return std::nullopt;
-            }
-        }
 
         entryArgCounter++;
     }
@@ -183,7 +217,7 @@ static std::optional<instruction> isFittingInstruction(const pugi::xml_node pri_
 
 inline static instruction FindInstruction(char* mnemonic, argument* args, const pugi::xml_node& one_byte) {
     const ubyte mnemonicLen = strlen(mnemonic);
-    for (ubyte chr = 0; chr < mnemonicLen; chr++)
+    for (ubyte chr = 0; chr < strlen(mnemonic); chr++)
         mnemonic[chr] = std::toupper(mnemonic[chr]);
 
     std::optional<instruction> bestInstrFound;
@@ -207,7 +241,7 @@ inline static instruction FindInstruction(char* mnemonic, argument* args, const 
     }
 
     if (!bestInstrFound.has_value())
-        Error(errorData, "No fitting opcode found. One of the instruction's arguments could be invalid for this instruction");
+        Error(errorData, "No fitting opcode found. One of the arguments could be invalid for this instruction");
 
     return *bestInstrFound;
 }
@@ -237,7 +271,10 @@ inline void CompileSource(IMAGE_SECTION_HEADER (&sections)[]) {
     srcFile.seekg(0);
 
     pugi::xml_document x86reference;
-    x86reference.load_file("../data/x86reference-master/x86reference.xml");
+    const char referencePath[] = "../data/x86reference-master/x86reference.xml";
+    pugi::xml_parse_result result = x86reference.load_file(referencePath);
+    if (result.status)
+        Error(referencePath + 1, result.description());
     pugi::xml_node one_byte = x86reference.first_child().first_child();
 
     errorData = {};

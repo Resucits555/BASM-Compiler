@@ -11,8 +11,8 @@ section .text
 
 	static staticFunc:
 	mov eax, ecx
-	ret
+	retn
 
 	global globalFunc:
 	;Function definition
-	ret
+	retn

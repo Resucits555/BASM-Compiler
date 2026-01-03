@@ -92,4 +92,4 @@ A function import is similar to a data import, but without a size:<br>
 extern \<name><br><br>
 
 
-Ending the main function with a "ret" is required.
+Ending the main function with a "retn" is required.
