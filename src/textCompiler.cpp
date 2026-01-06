@@ -3,6 +3,7 @@
 #include <cmath>
 
 #include "main.h"
+#include "symbols.h"
 #include "compilationData.h"
 
 
@@ -15,6 +16,7 @@ static ubyte minBitsToStoreValue(uintmax_t value, bool negative) {
 
     return floor(log2(value) + 1);
 }
+
 
 
 
@@ -41,6 +43,22 @@ static argument getArgument(char* argstr) {
         Error(errorData, "Invalid argument. Note that only standard registers from al to r15 are supported in this version");
 
     return { 'r', false, (ubyte)(pow(2, *reg >> 4) * 8), false, (ubyte)(*reg % 16) };
+}
+
+
+
+
+
+static SymbolData* findSymbol(const char* name, SymbolData* symtab, const SymbolData* symtabEnd) {
+    char symName[maxLineSize] = "";
+
+    for (SymbolData* symbol = symtab; symbol < symtabEnd; symbol++) {
+        symbol->getName(symName);
+        if (strcmp(name, symName) == 0)
+            return symbol;
+    }
+
+    Error(errorData, "Symbol could not be found");
 }
 
 
@@ -74,7 +92,7 @@ inline static void GetArguments(char* inputLine, argument* args) {
 
 
 
-inline static bool isCorrectType(argument& textArg, pugi::xml_node argNode, instruction& instr) {
+inline static bool IsCorrectType(argument& textArg, pugi::xml_node argNode, instruction& instr) {
     char type[4];
     strcpy(type, argNode.first_child().next_sibling().child_value());
 
@@ -131,7 +149,7 @@ inline static bool isCorrectType(argument& textArg, pugi::xml_node argNode, inst
 
 
 //Returns instruction data if it has fitting arguments etc., otherwise returns nullopt
-static std::optional<instruction> isFittingInstruction(const pugi::xml_node pri_opcd, const pugi::xml_node syntax, argument* args) {
+inline static std::optional<instruction> IsFittingInstruction(const pugi::xml_node pri_opcd, const pugi::xml_node syntax, argument* args) {
     instruction instr;
     if (strcmp(pri_opcd.parent().name(), "two-byte") == 0) {
         std::cout << syntax.parent().parent().parent().name();
@@ -157,7 +175,7 @@ static std::optional<instruction> isFittingInstruction(const pugi::xml_node pri_
 
 
         char addressing[4];
-        if (!argNode.first_attribute().empty()) {
+        if (argNode.first_child().type() == pugi::node_null) {
             if (*argNode.child_value() == 'S')
                 continue;
             strcpy(addressing, argNode.child_value());
@@ -172,7 +190,7 @@ static std::optional<instruction> isFittingInstruction(const pugi::xml_node pri_
         strcpy(addressing, argNode.first_child().child_value());
 
         if (addressing[1] != NULL)
-            Error(errorData, "Compiler does not support this type of instruction yet");
+            continue;
 
         switch (textArg.type) {
         case 'r':
@@ -200,7 +218,7 @@ static std::optional<instruction> isFittingInstruction(const pugi::xml_node pri_
         }
 
 
-        if (!isCorrectType(textArg, argNode, instr))
+        if (!IsCorrectType(textArg, argNode, instr))
             return std::nullopt;
 
         entryArgCounter++;
@@ -226,7 +244,7 @@ inline static instruction FindInstruction(char* mnemonic, argument* args, const 
         for (auto entry = pri_opcd.first_child(); entry.type() != pugi::node_null; entry = entry.next_sibling()) {
             for (auto syntax = entry.child("syntax"); strcmp(syntax.name(), "syntax") == 0; syntax = syntax.next_sibling()) {
                 if (strcmp(mnemonic, syntax.first_child().child_value()) == 0) {
-                    std::optional<instruction> newInstruction = isFittingInstruction(pri_opcd, syntax, args);
+                    std::optional<instruction> newInstruction = IsFittingInstruction(pri_opcd, syntax, args);
                     if (!newInstruction.has_value())
                         continue;
 
@@ -276,7 +294,7 @@ inline static void WriteToExe(std::ofstream& outFile, instruction instr) {
 
 
 
-inline void CompileSource(IMAGE_SECTION_HEADER (&sections)[]) {
+inline void CompileSource(IMAGE_SECTION_HEADER (&sections)[], SymbolData* const symtab, const SymbolData* symtabEnd) {
     srcFile.seekg(0);
 
     pugi::xml_document x86reference;
@@ -288,6 +306,7 @@ inline void CompileSource(IMAGE_SECTION_HEADER (&sections)[]) {
 
     errorData = {};
     char inputLine[maxLineSize] = "";
+    SymbolData* currentFunction = nullptr;
     bool inTextSection = false;
 
     while (!srcFile.eof()) {
@@ -316,21 +335,31 @@ inline void CompileSource(IMAGE_SECTION_HEADER (&sections)[]) {
             *comment = NULL;
         if (!std::regex_search(inputLine, std::regex("\\S")))
             continue;
-        if (strchr(inputLine, ':'))
-            continue;
+        const bool isSymbol = strchr(inputLine, ':');
 
 
-        char* mnemonic = strtok(inputLine, instrDelimiters);
-        if (strncmp(mnemonic, "extern", 7) == 0)
+        char* firstToken = strtok(inputLine, instrDelimiters);
+        if (strncmp(firstToken, "extern", 7) == 0)
             continue;
+        if (isSymbol) {
+            currentFunction = findSymbol(strtok(nullptr, " :"), symtab, symtabEnd);
+            currentFunction->value = (int)outFile.tellp() - sections[TEXT].mPointerToRawData;
+            srcFile.ignore(std::numeric_limits<std::streamsize>::max(), '\n');
+            continue;
+        }
 
         instruction instr;
         argument args[2];
         GetArguments(inputLine, args);
 
-        instr = FindInstruction(mnemonic, args, one_byte);
+        instr = FindInstruction(firstToken, args, one_byte);
 
         WriteToExe(outFile, instr);
+
+        if (strcmp(firstToken, "RETN") == 0 && currentFunction) {
+            AuxiliaryFunctionDefinition* aux = (AuxiliaryFunctionDefinition*)currentFunction + 1;
+            aux->TotalSize = (uint32_t)outFile.tellp() - currentFunction->value - sections[TEXT].mPointerToRawData;
+        }
     }
     
     sections[TEXT].mSizeOfRawData = (uint32_t)outFile.tellp() - sections[TEXT].mPointerToRawData;

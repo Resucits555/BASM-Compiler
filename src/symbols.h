@@ -1,6 +1,12 @@
 #pragma once
 
 
+const ushort baseSymbols = 2 * sectionCount + 2;
+
+
+
+
+
 enum class symbol_type : uint16_t {
     IMAGE_SYM_TYPE_NULL = 0x0,
     IMAGE_SYM_TYPE_VOID = 0x1,
@@ -36,7 +42,6 @@ struct COFF_Symbol {
     enum symbol_class storageClass = symbol_class::IMAGE_SYM_CLASS_NULL;
     uint8_t numberOfAuxSymbols = 0;
 };
-
 
 
 

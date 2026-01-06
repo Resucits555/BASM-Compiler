@@ -92,4 +92,15 @@ A function import is similar to a data import, but without a size:<br>
 extern \<name><br><br>
 
 
+The assembler also supports lable hierarchy: After a top level lable or function definition "static function:", 
+a child lable can be given to it: ".loop". This lable will be only accessible in it's parent's scope, 
+and it can also have children marked with another dot: "..loop".<br>
+This follows simple hierarchy rules seen in many other projects.<br>
+
+In a function's definition there can't be another definition, 
+the previous function has to exit with "retn" before another can start.
+Indentation is also not allowed.
+
+
+The entry point and therefore the start of the main function is denoted with the "_start" keyword.<br>
 Exiting the main function with a "retn" is required.

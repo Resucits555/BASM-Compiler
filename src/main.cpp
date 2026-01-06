@@ -51,7 +51,7 @@ void ProcessInputError(char* inputLine, const fpos_t startOfLine, const ErrorDat
         srcFile.getline(inputLine, FPOSMAX, ';');
         if (srcFile.fail()) {
             Error(errorData, ("Exceeding line length limit of " + std::to_string(maxLineSize)
-                + " characters. Comments are discarded automatically").c_str());
+                + " characters. Comments not included").c_str());
         }
         else {
             srcFile.ignore(std::numeric_limits<std::streamsize>::max(), '\n');
@@ -68,19 +68,10 @@ void ProcessInputError(char* inputLine, const fpos_t startOfLine, const ErrorDat
 
 std::optional<ubyte> findStringInArray(const char* string, const char* array, const ushort arrayElementCount, const ubyte arrayStrLen) {
     for (ubyte stringI = 0; stringI < arrayElementCount; stringI++) {
-        if (strcmp(string, array + (stringI* arrayStrLen)) == NULL)
+        if (strcmp(string, array + (stringI * arrayStrLen)) == NULL)
             return stringI;
     }
     return std::nullopt;
-}
-
-
-
-
-
-inline bool hasAux(SymbolData* sym) {
-    const ubyte functionSize = 0;
-    return (sym->sectionNumber && sym->size == functionSize);
 }
 
 
@@ -153,10 +144,11 @@ int main(const ubyte argc, char* argv[]) {
 
 
             SymbolScopeCount symbolCount = CountSymbols();
-            char* symtab = FindSymbols(symbolCount);
+            SymbolData* const symtab = FindSymbols(symbolCount);
+            SymbolData* symtabEnd = symbolCount.getSymtabEnd(symtab);
 
             outFile.seekp(sections[TEXT].mPointerToRawData);
-            CompileSource(sections);
+            CompileSource(sections, (SymbolData*)symtab, symtabEnd);
 
             const fpos_t symtabPos = outFile.tellp();
             WriteSymbolTable(srcPath, sections, symtab, symbolCount);

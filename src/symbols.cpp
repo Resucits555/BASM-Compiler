@@ -118,9 +118,11 @@ static ubyte GetSymbolSize(const char* str, ErrorData errorData) {
 
 
 
-inline char* FindSymbols(const SymbolScopeCount& symbolCount) {
-    char* symtab = (char*)calloc((size_t)symbolCount.sumWithAux(), sizeof(SymbolData));
-    const char* const symtabEnd = symtab + symbolCount.sumWithAux() * sizeof(SymbolData);
+inline SymbolData* FindSymbols(const SymbolScopeCount& symbolCount) {
+    SymbolData* symtab = (SymbolData*)calloc((size_t)symbolCount.sumWithAux(), sizeof(SymbolData));
+    if (symtab == nullptr)
+        Error("\"calloc\" function failed");
+    const SymbolData* const symtabEnd = symbolCount.getSymtabEnd(symtab);
     SymbolData* symbol = (SymbolData*)symtab;
 
 
@@ -128,6 +130,7 @@ inline char* FindSymbols(const SymbolScopeCount& symbolCount) {
 
     srcFile.seekg(0);
     Section currentSection = NOSECTION;
+    AuxiliaryFunctionDefinition* prevAux = nullptr;
     char inputLine[maxLineSize] = "";
 
     while (!srcFile.eof()) {
@@ -175,8 +178,8 @@ inline char* FindSymbols(const SymbolScopeCount& symbolCount) {
                 symbol->storageClass = symbol_class::IMAGE_SYM_CLASS_EXTERNAL;
 
             if (currentSection != TEXT)
-                symbol->size = GetSymbolSize(strtok(nullptr, " "), errorData);
-            else if (scope == Scope::EXTERN)
+                symbol->size = GetSymbolSize(strtok(nullptr, " :"), errorData);
+            if (scope == Scope::EXTERN)
                 symbol->sectionNumber = 0;
         }
 
@@ -185,9 +188,18 @@ inline char* FindSymbols(const SymbolScopeCount& symbolCount) {
         symbol->nameLen = strlen(name) + terminatingNull;
 
 
-        symbol += hasAux(symbol);
+        if (symbol->hasFunctionAux()) {
+            if (prevAux != nullptr) {
+                const ushort fileSymbol = 2;
+                prevAux->PointerToNextFunction = symbol - symtab + fileSymbol;
+            }
+            prevAux = (AuxiliaryFunctionDefinition*)symbol + 1;
+            symbol++;
+            *prevAux = {};
+        }
+
         symbol++;
-        if ((char*)symbol > symtabEnd)
+        if (symbol > symtabEnd)
             CompilerError(errorData, "Symbols don't fit into symtab. Symbols were miscounted");
     }
 
@@ -204,20 +216,14 @@ union SymPointer {
     COFF_Symbol* coff;
 };
 
-inline static void ConvertSymbols(char* symtab, const SymbolScopeCount symbolCount, const fpos_t strtabPos) {
-    const char* const symtabEnd = symtab + symbolCount.sumWithAux() * sizeof(COFF_Symbol);
-    SymPointer sym;
-    sym.chr = symtab;
+inline static void ConvertSymbols(SymbolData* const symtab, const SymbolScopeCount symbolCount, const fpos_t strtabPos) {
+    const SymbolData* const symtabEnd = symbolCount.getSymtabEnd(symtab);
 
     char name[maxLineSize] = "";
 
-    while (sym.chr < symtabEnd) {
-        srcFile.clear();
-        srcFile.seekg(sym.data->nameRef);
-        srcFile.getline(name, sym.data->nameLen);
-
-        if (srcFile.bad())
-            ProcessInputError(name, sym.data->nameRef, {});
+    SymPointer sym;
+    for (sym.data = symtab; sym.data < symtabEnd; sym.data++) {
+        sym.data->getName(name);
 
         if (sym.data->nameLen > 8) {
             memset(sym.coff->name.shortName, 0, 8);
@@ -236,9 +242,7 @@ inline static void ConvertSymbols(char* symtab, const SymbolScopeCount symbolCou
 
             if (sym.data->sectionNumber) {
                 sym.coff->numberOfAuxSymbols = 1;
-                sym.coff++;
-                //TODO: Write AuxiliaryFunctionDefinition
-                *sym.coff = {};
+                sym.data++;
             }
             break;
         case 1:
@@ -253,16 +257,13 @@ inline static void ConvertSymbols(char* symtab, const SymbolScopeCount symbolCou
         default:
             sym.coff->type = symbol_type::IMAGE_SYM_TYPE_NULL;
         }
-
-        sym.coff++;
     }
 }
 
 
 
 
-inline void WriteSymbolTable(const fs::path srcPath, IMAGE_SECTION_HEADER(&sections)[], char* symtab, const SymbolScopeCount& symbolCount) {
-    const ushort baseSymbols = 2 * sectionCount + 2;
+inline void WriteSymbolTable(const fs::path srcPath, IMAGE_SECTION_HEADER(&sections)[], SymbolData* const symtab, const SymbolScopeCount& symbolCount) {
     const ushort strtabSizeVar = sizeof(uint32_t);
     const fpos_t strtabFirst = (fpos_t)outFile.tellp() + sizeof(COFF_Symbol) * (symbolCount.sumWithAux() + baseSymbols) + strtabSizeVar;
 
@@ -295,7 +296,7 @@ inline void WriteSymbolTable(const fs::path srcPath, IMAGE_SECTION_HEADER(&secti
     ConvertSymbols(symtab, symbolCount, strtabFirst - strtabSizeVar);
     const ulong strtabSize = outFile.tellp() - strtabFirst + (fpos_t)strtabSizeVar;
     outFile.seekp(nextSymbol);
-    outFile.write(symtab, symbolCount.sumWithAux() * sizeof(COFF_Symbol));
+    outFile.write((char*)symtab, symbolCount.sumWithAux() * sizeof(COFF_Symbol));
 
 
     for (ubyte sectionI = 1; sectionI < sectionCount + 1; sectionI++) {
