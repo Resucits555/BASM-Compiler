@@ -21,11 +21,11 @@ inline void WriteCOFFHeader(const fpos_t symtabPos, const SymbolScopeCount& symb
 
 
 inline void WriteSectionTable(SectionTab& sections, const ubyte sectionSymCount) {
-    for (ubyte sectionI = 1; sectionI < sectionCount + 1; sectionI++) {
-        strcpy(sections.header((Section)sectionI)->mName, sectionNames[sectionI]);
-        SectionHeader* section = sections.header((Section)sectionI);
+    for (ubyte sectionI = 1; sectionI < sectionSymCount + 1; sectionI++) {
+        SectionHeader* section = sections.headers + sectionI;
+        strcpy(section->mName, sectionNames[section->section]);
+        section->mCharacteristics = sectionCharacteristics[section->section];
         section->section = NOSECTION;
-        section->mCharacteristics = sectionCharacteristics[sectionI];
     }
 
     outFile.write((char*)&sections + sizeof(SectionHeader), sectionSymCount * sizeof(SectionHeader));

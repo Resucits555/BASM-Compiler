@@ -342,9 +342,9 @@ inline void WriteSymbolTable(const fs::path srcPath, SectionTab& sections, Symbo
     outFile.write((char*)symtab, (symbolCount.sum() - 2 * symbolCount.sectionSymCount) * sizeof(COFF_Symbol));
 
 
-    for (ubyte sectionI = 1; sectionI < sectionCount + 1; sectionI++) {
+    for (ubyte sectionI = 1; sectionI < symbolCount.sectionSymCount + 1; sectionI++) {
         COFF_Symbol section;
-        strcpy(section.name.shortName, sectionNames[sectionI]);
+        strcpy(section.name.shortName, sectionNames[sections.header((Section)sectionI) - sections.headers]);
         section.value = 0;
         section.sectionNumber = sectionI;
         section.type = symbol_type::IMAGE_SYM_TYPE_NULL;
@@ -353,7 +353,7 @@ inline void WriteSymbolTable(const fs::path srcPath, SectionTab& sections, Symbo
         outFile.write((char*)&section, sizeof(COFF_Symbol));
 
         AuxiliarySectionDefinition aux = {};
-        aux.Length = sections.header((Section)sectionI)->mSizeOfRawData;
+        aux.Length = sections.headers[sectionI].mSizeOfRawData;
         outFile.write((char*)&aux, sizeof(COFF_Symbol));
     }
 

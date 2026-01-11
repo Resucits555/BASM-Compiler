@@ -6,19 +6,19 @@ void Warning(const ErrorData errorData, const char* message) {
 }
 
 
-[[noreturn]] void Error(const char* message) {
+NORETURN void Error(const char* message) {
     std::cerr << "ERROR: " << srcPathStr << ": " << message << ".\n\n";
     exit(-1);
 }
 
 
-[[noreturn]] void Error(const char* path, const char* message) {
+NORETURN void Error(const char* path, const char* message) {
     std::cerr << "ERROR: " << path << ": " << message << ".\n\n";
     exit(-1);
 }
 
 
-[[noreturn]] void Error(const ErrorData errorData, const char* message) {
+NORETURN void Error(const ErrorData errorData, const char* message) {
     if (errorData.getLine() == 0)
         Error(message);
     std::cerr << "ERROR: " << srcPathStr << " at line " << errorData.getLine() << ": " << message << ".\n\n";
@@ -26,14 +26,14 @@ void Warning(const ErrorData errorData, const char* message) {
 }
 
 
-[[noreturn]] void CompilerError(const char* message) {
+NORETURN void CompilerError(const char* message) {
     std::cerr << "Compiler error: " << srcPathStr << ": "
         << message << ". Please report the bug to the creators of this compiler.\n\n";
     exit(-1);
 }
 
 
-[[noreturn]] void CompilerError(const ErrorData errorData, const char* message) {
+NORETURN void CompilerError(const ErrorData errorData, const char* message) {
     std::cerr << "Compiler error: " << srcPathStr << " at line " << errorData.getLine() << ": "
         << message << ". Please report the bug to the creators of this compiler.\n\n";
     exit(-1);
@@ -154,7 +154,7 @@ int main(const ubyte argc, char* argv[]) {
 
             const ubyte coffHeaderSize = 20;
             const ubyte sectionHeaderSize = 40;
-            sections.header(TEXT)->mPointerToRawData = coffHeaderSize + (symbolCount.sectionSymCount * sectionHeaderSize);
+            sections.text()->mPointerToRawData = coffHeaderSize + (symbolCount.sectionSymCount * sectionHeaderSize);
 
             outFile.seekp(sections.headers[TEXT].mPointerToRawData);
             CompileSource(sections, (SymbolData*)symtab, symtabEnd);

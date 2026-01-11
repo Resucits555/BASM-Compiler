@@ -14,6 +14,12 @@ typedef std::uint_fast32_t ulong;
 
 namespace fs = std::filesystem;
 
+#if defined(_MSC_VER)
+#  define NORETURN __declspec(noreturn)
+#else
+#  define NORETURN [[noreturn]]
+#endif
+
 
 
 
@@ -24,7 +30,7 @@ const ushort maxLineSize = 255;
 const double sectionAlignment = 0x1000;
 const double fileAlignment = 0x200;
 
-const char sectionNames[][8] = { "ERROR", ".text", ".bss", ".data", ".rdata" };
+const char sectionNames[][9] = { "ERROR", ".text", ".bss", ".data", ".rdata", ".comment", ".drectve"};
 constexpr ubyte sectionCount = std::size(sectionNames) - 1;
 enum Section : int8_t {
     ABS = -1,
@@ -96,12 +102,12 @@ struct SectionHeader {
 
 
 
-extern void CompilerError(const char* message);
+extern NORETURN void CompilerError(const char* message);
 struct SectionTab {
     SectionHeader headers[sectionCount + 1];
 
-    inline SectionHeader* header(Section section) {
-        for (ubyte sectionI = 1; sectionI < std::size(headers); sectionI++) {
+    SectionHeader* header(Section section) {
+        for (ubyte sectionI = 1; sectionI <= sectionCount; sectionI++) {
             if (headers[sectionI].section == section)
                 return headers + sectionI;
         }
@@ -190,11 +196,11 @@ struct SymbolScopeCount {
 
 //Visual studio can't detect that these functions are noreturn, so it throws warnings
 extern void Warning(const ErrorData errorData, const char* message);
-extern void Error(const char* message);
-extern void Error(const char* path, const char* message);
-extern void Error(const ErrorData errorData, const char* message);
-extern void CompilerError(const char* message);
-extern void CompilerError(const ErrorData errorData, const char* message);
+extern NORETURN void Error(const char* message);
+extern NORETURN void Error(const char* path, const char* message);
+extern NORETURN void Error(const ErrorData errorData, const char* message);
+extern NORETURN void CompilerError(const char* message);
+extern NORETURN void CompilerError(const ErrorData errorData, const char* message);
 extern void ProcessInputError(char* inputLine, const fpos_t startOfLine, const ErrorData& errorData);
 extern std::optional<ubyte> findStringInArray(const char* string, const char* array, ushort arraySize, const ubyte arrayStrLen);
 

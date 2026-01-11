@@ -238,7 +238,7 @@ inline static instruction FindInstruction(char* mnemonic, argument* args, const 
         mnemonic[chr] = std::toupper(mnemonic[chr]);
 
     std::optional<instruction> bestInstrFound;
-    ubyte bestInstrSize;
+    ubyte bestInstrSize = -1;
 
     for (auto pri_opcd = one_byte.first_child(); pri_opcd.type() != pugi::node_null; pri_opcd = pri_opcd.next_sibling()) {
         for (auto entry = pri_opcd.first_child(); entry.type() != pugi::node_null; entry = entry.next_sibling()) {
