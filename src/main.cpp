@@ -26,6 +26,13 @@ void Warning(const ErrorData errorData, const char* message) {
 }
 
 
+[[noreturn]] void CompilerError(const char* message) {
+    std::cerr << "Compiler error: " << srcPathStr << ": "
+        << message << ". Please report the bug to the creators of this compiler.\n\n";
+    exit(-1);
+}
+
+
 [[noreturn]] void CompilerError(const ErrorData errorData, const char* message) {
     std::cerr << "Compiler error: " << srcPathStr << " at line " << errorData.getLine() << ": "
         << message << ". Please report the bug to the creators of this compiler.\n\n";
@@ -54,7 +61,7 @@ void ProcessInputError(char* inputLine, const fpos_t startOfLine, const ErrorDat
                 + " characters. Comments not included").c_str());
         }
         else {
-            srcFile.ignore(std::numeric_limits<std::streamsize>::max(), '\n');
+            srcFile.ignore(FPOSMAX, '\n');
             return;
         }
     }
@@ -137,26 +144,30 @@ int main(const ubyte argc, char* argv[]) {
             }
 
 
-            IMAGE_SECTION_HEADER sections[sectionCount + 1];
+            SymbolScopeCount symbolCount = CountSymbols();
+
+            SectionTab sections = {};
+            sections.text()->section = TEXT;
+
+            SymbolData* const symtab = FindSymbols(symbolCount, sections);
+            SymbolData* symtabEnd = symbolCount.getReducedSymtabEnd(symtab);
+
             const ubyte coffHeaderSize = 20;
             const ubyte sectionHeaderSize = 40;
-            sections[TEXT].mPointerToRawData = coffHeaderSize + (sectionCount * sectionHeaderSize);
+            sections.header(TEXT)->mPointerToRawData = coffHeaderSize + (symbolCount.sectionSymCount * sectionHeaderSize);
 
-
-            SymbolScopeCount symbolCount = CountSymbols();
-            SymbolData* const symtab = FindSymbols(symbolCount);
-            SymbolData* symtabEnd = symbolCount.getSymtabEnd(symtab);
-
-            outFile.seekp(sections[TEXT].mPointerToRawData);
+            outFile.seekp(sections.headers[TEXT].mPointerToRawData);
             CompileSource(sections, (SymbolData*)symtab, symtabEnd);
+
+            WriteData(symtab, symtabEnd, sections);
 
             const fpos_t symtabPos = outFile.tellp();
             WriteSymbolTable(srcPath, sections, symtab, symbolCount);
             srcFile.close();
             free(symtab);
 
-            WriteCOFFHeader(symtabPos, outFile.tellp());
-            WriteSectionTable(sections);
+            WriteCOFFHeader(symtabPos, symbolCount);
+            WriteSectionTable(sections, symbolCount.sectionSymCount);
 
             outFile.close();
         }

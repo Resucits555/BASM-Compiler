@@ -294,9 +294,7 @@ inline static void WriteToExe(std::ofstream& outFile, instruction instr) {
 
 
 
-inline void CompileSource(IMAGE_SECTION_HEADER (&sections)[], SymbolData* const symtab, const SymbolData* symtabEnd) {
-    srcFile.seekg(0);
-
+inline void CompileSource(SectionTab& sections, SymbolData* const symtab, const SymbolData* symtabEnd) {
     pugi::xml_document x86reference;
     const char referencePath[] = "../data/x86reference-master/x86reference.xml";
     pugi::xml_parse_result result = x86reference.load_file(referencePath);
@@ -305,6 +303,7 @@ inline void CompileSource(IMAGE_SECTION_HEADER (&sections)[], SymbolData* const 
     pugi::xml_node one_byte = x86reference.first_child().first_child();
 
     errorData = {};
+    srcFile.seekg(0);
     char inputLine[maxLineSize] = "";
     SymbolData* currentFunction = nullptr;
     bool inTextSection = false;
@@ -343,8 +342,8 @@ inline void CompileSource(IMAGE_SECTION_HEADER (&sections)[], SymbolData* const 
             continue;
         if (isSymbol) {
             currentFunction = findSymbol(strtok(nullptr, " :"), symtab, symtabEnd);
-            currentFunction->value = (int)outFile.tellp() - sections[TEXT].mPointerToRawData;
-            srcFile.ignore(std::numeric_limits<std::streamsize>::max(), '\n');
+            currentFunction->value = (int)outFile.tellp() - sections.text()->mPointerToRawData;
+            srcFile.ignore(FPOSMAX, '\n');
             continue;
         }
 
@@ -358,9 +357,9 @@ inline void CompileSource(IMAGE_SECTION_HEADER (&sections)[], SymbolData* const 
 
         if (strcmp(firstToken, "RETN") == 0 && currentFunction) {
             AuxiliaryFunctionDefinition* aux = (AuxiliaryFunctionDefinition*)currentFunction + 1;
-            aux->TotalSize = (uint32_t)outFile.tellp() - currentFunction->value - sections[TEXT].mPointerToRawData;
+            aux->TotalSize = (uint32_t)outFile.tellp() - currentFunction->value - sections.text()->mPointerToRawData;
         }
     }
     
-    sections[TEXT].mSizeOfRawData = (uint32_t)outFile.tellp() - sections[TEXT].mPointerToRawData;
+    sections.text()->mSizeOfRawData = (uint32_t)outFile.tellp() - sections.text()->mPointerToRawData;
 }

@@ -1,9 +1,6 @@
 #pragma once
 
 
-const ushort baseSymbols = 2 * sectionCount + 2;
-
-
 
 
 

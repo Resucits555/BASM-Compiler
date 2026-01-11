@@ -24,14 +24,14 @@ const ushort maxLineSize = 255;
 const double sectionAlignment = 0x1000;
 const double fileAlignment = 0x200;
 
-const char sectionNames[][8] = { "ERROR", ".text", ".data", ".bss" };
+const char sectionNames[][8] = { "ERROR", ".text", ".bss", ".data", ".rdata" };
 constexpr ubyte sectionCount = std::size(sectionNames) - 1;
-enum Section {
+enum Section : int8_t {
     ABS = -1,
     NOSECTION,
     TEXT,
-    DATA,
-    BSS
+    BSS,
+    DATA
 };
 
 extern std::ofstream outFile;
@@ -40,7 +40,8 @@ extern const char* srcPathStr;
 
 
 const fpos_t FPOSMAX = std::numeric_limits<fpos_t>::max();
-const ubyte terminatingNull = 1;
+const int terminatingNull = 1;
+const ushort fileSymbol = 2;
 
 
 
@@ -83,18 +84,35 @@ enum class symbol_class : uint8_t {
 
 
 
-struct IMAGE_SECTION_HEADER {
+struct SectionHeader {
     char mName[8] = "";
-    uint32_t mVirtualSize = 0;
-    uint32_t mVirtualAddress = 0;
+    char unused1[8];
     uint32_t mSizeOfRawData = 0;
     uint32_t mPointerToRawData = 0;
-    uint32_t mPointerToRelocations = 0;
-    uint32_t mPointerToLinenumbers = 0;
-    uint16_t mNumberOfRelocations = 0;
-    uint16_t mNumberOfLinenumbers = 0;
+    Section section = Section::NOSECTION;
+    char unused2[11];
     uint32_t mCharacteristics = 0;
 };
+
+
+
+extern void CompilerError(const char* message);
+struct SectionTab {
+    SectionHeader headers[sectionCount + 1];
+
+    inline SectionHeader* header(Section section) {
+        for (ubyte sectionI = 1; sectionI < std::size(headers); sectionI++) {
+            if (headers[sectionI].section == section)
+                return headers + sectionI;
+        }
+        CompilerError("Tried to find non-existing section");
+    }
+
+    inline SectionHeader* text() {
+        return headers + 1;
+    }
+};
+
 
 
 
@@ -151,17 +169,18 @@ struct SymbolScopeCount {
     ushort staticSymCount = 0;
     ushort globalSymCount = 0;
     ushort externSymCount = 0;
+    ubyte sectionSymCount = 0;
 
-    ushort sum() const {
-        return staticSymCount + globalSymCount + externSymCount;
+    ushort getReducedSymtabSize() const {
+        return staticSymCount + globalSymCount + externSymCount + auxiliary;
     }
 
-    ushort sumWithAux() const {
-        return sum() + auxiliary;
+    inline ushort sum() const {
+        return getReducedSymtabSize() + 2 * sectionSymCount;
     }
 
-    inline SymbolData* getSymtabEnd(const SymbolData* const symtab) const {
-        return (SymbolData*)(symtab + sumWithAux());
+    inline SymbolData* getReducedSymtabEnd(const SymbolData* const symtab) const {
+        return (SymbolData*)(symtab + getReducedSymtabSize());
     }
 };
 
@@ -174,13 +193,15 @@ extern void Warning(const ErrorData errorData, const char* message);
 extern void Error(const char* message);
 extern void Error(const char* path, const char* message);
 extern void Error(const ErrorData errorData, const char* message);
+extern void CompilerError(const char* message);
 extern void CompilerError(const ErrorData errorData, const char* message);
 extern void ProcessInputError(char* inputLine, const fpos_t startOfLine, const ErrorData& errorData);
 extern std::optional<ubyte> findStringInArray(const char* string, const char* array, ushort arraySize, const ubyte arrayStrLen);
 
 extern SymbolScopeCount CountSymbols();
-extern SymbolData* FindSymbols(const SymbolScopeCount& symbolCount);
-extern void CompileSource(IMAGE_SECTION_HEADER(&sections)[], SymbolData* const symtab, const SymbolData* symtabEnd);
-extern void WriteSymbolTable(const fs::path srcPath, IMAGE_SECTION_HEADER(&sections)[], SymbolData* const symtab, const SymbolScopeCount& symbolCount);
-extern void WriteCOFFHeader(const fpos_t symtabPos, const fpos_t strtabPos);
-extern void WriteSectionTable(IMAGE_SECTION_HEADER(&sections)[]);
+extern SymbolData* FindSymbols(const SymbolScopeCount& symbolCount, SectionTab& sections);
+extern void CompileSource(SectionTab& sections, SymbolData* const symtab, const SymbolData* symtabEnd);
+extern inline void WriteData(SymbolData* const symtab, const SymbolData* symtabEnd, SectionTab& sections);
+extern void WriteSymbolTable(const fs::path srcPath, SectionTab& sections, SymbolData* const symtab, const SymbolScopeCount& symbolCount);
+extern void WriteCOFFHeader(const fpos_t symtabPos, const SymbolScopeCount& symbolCount);
+extern void WriteSectionTable(SectionTab& sections, const ubyte sectionSymCount);

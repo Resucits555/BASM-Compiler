@@ -7,10 +7,10 @@
 static bool isValidSymbol(const char* str, Section section) {
     const char regexes[][39] = {
     "[a-zA-Z]{6} [a-zA-Z]\\w*:?\\s*",
-    "(global )?[a-zA-Z]+ [a-zA-Z]+ = \\d+\\s*",
-    "(extern )?[a-zA-Z]+ [a-zA-Z]+\\s*" };
+    "(extern )?[a-zA-Z]+ [a-zA-Z]+\\s*",
+    "(global )?[a-zA-Z]+ [a-zA-Z]+ = \\d+\\s*" };
 
-    return std::regex_match(str, std::regex(regexes[section - 1]));
+    return std::regex_match(str, std::regex(regexes[std::clamp(section - 1, 0, 2)]));
 }
 
 
@@ -65,6 +65,7 @@ inline SymbolScopeCount CountSymbols() {
             }
 
             currentSection = (Section)sectionI;
+            symbolCount.sectionSymCount++;
             continue;
         }
 
@@ -118,11 +119,11 @@ static ubyte GetSymbolSize(const char* str, ErrorData errorData) {
 
 
 
-inline SymbolData* FindSymbols(const SymbolScopeCount& symbolCount) {
-    SymbolData* symtab = (SymbolData*)calloc((size_t)symbolCount.sumWithAux(), sizeof(SymbolData));
+inline SymbolData* FindSymbols(const SymbolScopeCount& symbolCount, SectionTab& sections) {
+    SymbolData* symtab = (SymbolData*)calloc((size_t)symbolCount.sum(), sizeof(SymbolData));
     if (symtab == nullptr)
         Error("\"calloc\" function failed");
-    const SymbolData* const symtabEnd = symbolCount.getSymtabEnd(symtab);
+    const SymbolData* const symtabEnd = symbolCount.getReducedSymtabEnd(symtab);
     SymbolData* symbol = (SymbolData*)symtab;
 
 
@@ -130,6 +131,7 @@ inline SymbolData* FindSymbols(const SymbolScopeCount& symbolCount) {
 
     srcFile.seekg(0);
     Section currentSection = NOSECTION;
+    ubyte sectionIndex = 2;
     AuxiliaryFunctionDefinition* prevAux = nullptr;
     char inputLine[maxLineSize] = "";
 
@@ -146,6 +148,9 @@ inline SymbolData* FindSymbols(const SymbolScopeCount& symbolCount) {
             ubyte sectionI = 1;
             for (sectionI; strcmp(inputLine + 8, sectionNames[sectionI]) != 0; sectionI++);
             currentSection = (Section)sectionI;
+
+            if (sectionI != TEXT)
+                sections.headers[sectionIndex++].section = (Section)sectionI;
             continue;
         }
 
@@ -165,7 +170,7 @@ inline SymbolData* FindSymbols(const SymbolScopeCount& symbolCount) {
         const char* firstToken = strtok(formattedLine, " ");
         Scope scope = getScope(firstToken);
 
-        symbol->sectionNumber = (int16_t)currentSection;
+        symbol->sectionNumber = currentSection;
 
         if (scope == Scope::UNDEF) {
             symbol->storageClass = symbol_class::IMAGE_SYM_CLASS_STATIC;
@@ -183,9 +188,16 @@ inline SymbolData* FindSymbols(const SymbolScopeCount& symbolCount) {
                 symbol->sectionNumber = 0;
         }
 
+
         const char* name = strtok(nullptr, " :");
         symbol->nameRef = startOfLine + (name - formattedLine) + 1;
         symbol->nameLen = strlen(name) + terminatingNull;
+
+
+        if (currentSection >= BSS) {
+            symbol->value = sections.header(currentSection)->mSizeOfRawData;
+            sections.header(currentSection)->mSizeOfRawData += symbol->size;
+        }
 
 
         if (symbol->hasFunctionAux()) {
@@ -210,14 +222,43 @@ inline SymbolData* FindSymbols(const SymbolScopeCount& symbolCount) {
 
 
 
+inline void WriteData(SymbolData* const symtab, const SymbolData* symtabEnd, SectionTab& sections) {
+    char inputLine[maxLineSize];
+    Section prevSection = NOSECTION;
+    for (SymbolData* sym = symtab; sym < symtabEnd; sym++) {
+        if (sym->sectionNumber <= BSS)
+            continue;
+
+        srcFile.seekg(sym->nameRef + sym->nameLen);
+        srcFile.getline(inputLine, FPOSMAX);
+
+        if (srcFile.bad())
+            ProcessInputError(inputLine, sym->nameRef, {});
+        if (*inputLine != '=')
+            Error(("Variable in section number " + sym->sectionNumber + (std::string)" not initialised").c_str());
+
+        if (prevSection != sym->sectionNumber) {
+            sections.header((Section)sym->sectionNumber)->mPointerToRawData = outFile.tellp();
+            prevSection = (Section)sym->sectionNumber;
+        }
+
+        long long value = std::stoll(inputLine + 2, nullptr, 0);
+        outFile.write((char*)&value, sym->size);
+    }
+}
+
+
+
+
+
 union SymPointer {
     char* chr;
     SymbolData* data;
     COFF_Symbol* coff;
 };
 
-inline static void ConvertSymbols(SymbolData* const symtab, const SymbolScopeCount symbolCount, const fpos_t strtabPos) {
-    const SymbolData* const symtabEnd = symbolCount.getSymtabEnd(symtab);
+inline static void ConvertSymbols(SymbolData* const symtab, const SymbolScopeCount symbolCount, const fpos_t strtabPos, SectionTab& sections) {
+    const SymbolData* const symtabEnd = symbolCount.getReducedSymtabEnd(symtab);
 
     char name[maxLineSize] = "";
 
@@ -235,6 +276,8 @@ inline static void ConvertSymbols(SymbolData* const symtab, const SymbolScopeCou
         }
 
         sym.coff->numberOfAuxSymbols = 0;
+        if (sym.data->sectionNumber > 0)
+            sym.coff->sectionNumber = (sections.header((Section)sym.data->sectionNumber) - sections.headers);
 
         switch (sym.data->size) {
         case 0:
@@ -263,9 +306,9 @@ inline static void ConvertSymbols(SymbolData* const symtab, const SymbolScopeCou
 
 
 
-inline void WriteSymbolTable(const fs::path srcPath, IMAGE_SECTION_HEADER(&sections)[], SymbolData* const symtab, const SymbolScopeCount& symbolCount) {
+inline void WriteSymbolTable(const fs::path srcPath, SectionTab& sections, SymbolData* const symtab, const SymbolScopeCount& symbolCount) {
     const ushort strtabSizeVar = sizeof(uint32_t);
-    const fpos_t strtabFirst = (fpos_t)outFile.tellp() + sizeof(COFF_Symbol) * (symbolCount.sumWithAux() + baseSymbols) + strtabSizeVar;
+    const fpos_t strtabFirst = (fpos_t)outFile.tellp() + sizeof(COFF_Symbol) * (symbolCount.sum() + fileSymbol) + strtabSizeVar;
 
 
     COFF_Symbol file;
@@ -293,10 +336,10 @@ inline void WriteSymbolTable(const fs::path srcPath, IMAGE_SECTION_HEADER(&secti
     }
 
 
-    ConvertSymbols(symtab, symbolCount, strtabFirst - strtabSizeVar);
+    ConvertSymbols(symtab, symbolCount, strtabFirst - strtabSizeVar, sections);
     const ulong strtabSize = outFile.tellp() - strtabFirst + (fpos_t)strtabSizeVar;
     outFile.seekp(nextSymbol);
-    outFile.write((char*)symtab, symbolCount.sumWithAux() * sizeof(COFF_Symbol));
+    outFile.write((char*)symtab, (symbolCount.sum() - 2 * symbolCount.sectionSymCount) * sizeof(COFF_Symbol));
 
 
     for (ubyte sectionI = 1; sectionI < sectionCount + 1; sectionI++) {
@@ -310,7 +353,7 @@ inline void WriteSymbolTable(const fs::path srcPath, IMAGE_SECTION_HEADER(&secti
         outFile.write((char*)&section, sizeof(COFF_Symbol));
 
         AuxiliarySectionDefinition aux = {};
-        aux.Length = sections[sectionI].mSizeOfRawData;
+        aux.Length = sections.header((Section)sectionI)->mSizeOfRawData;
         outFile.write((char*)&aux, sizeof(COFF_Symbol));
     }
 
