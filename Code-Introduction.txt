@@ -1,3 +1,6 @@
-Abbreviations in the code, mostly in the compiling part, come from http://ref.x86asm.net/index.html#Instruction-Operand-Codes
-The table found at that website, geek64 edition, is used here in form of an xml file. It can also be found at https://github.com/mazegen/x86reference
-https://wiki.osdev.org/X86-64_Instruction_Encoding and https://learn.microsoft.com/en-us/windows/win32/debug/pe-format are the primary sources of information for this project.
+Abbreviations in the code, mostly in the compiling part, can be looked up at http://ref.x86asm.net/index.html#Instruction-Operand-Codes
+The table found at that website, geek64 edition, is used here in form of an xml file as an opcode reference. It can also be found at https://github.com/mazegen/x86reference
+
+https://wiki.osdev.org/X86-64_Instruction_Encoding
+https://learn.microsoft.com/en-us/windows/win32/debug/pe-format
+ are the primary sources of information for this project.

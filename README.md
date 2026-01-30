@@ -87,20 +87,16 @@ basm also supports an array access shortcut from the C language: "pointer[index]
 
 Functions are declared similarly to variables, followed by the definition:<br>
 static/global \<name>:<br>
-Names without a "global" or "static" keyword are interpreted as lables.<br>
+Names without a "global" or "static" keyword are interpreted as labels.<br>
 A function import is similar to a data import, but without a size:<br>
 extern \<name><br><br>
 
 
-The assembler also supports lable hierarchy: After a top level lable or function definition "static function:", 
-a child lable can be given to it: ".loop". This lable will be only accessible in it's parent's scope, 
+The assembler also supports label hierarchy: After a top level label or function definition "static function:", 
+a child label can be given to it: ".loop". This label will be only accessible within it's parent's scope, 
 and it can also have children marked with another dot: "..loop".<br>
 This follows simple hierarchy rules seen in many other projects.<br>
 
-In a function's definition there can't be another definition, 
-the previous function has to exit with "retn" before another can start.
-Indentation is also not allowed.
-
-
-The entry point and therefore the start of the main function is denoted with the "_start" keyword.<br>
-Exiting the main function with a "retn" is required.
+Every relative address has to be marked with the "rel" keyword, like in function calls and jumps.<br>
+Also relative addresses cannot be used in any way until passing it in the code.
+Jumps forward are therefore not possible.

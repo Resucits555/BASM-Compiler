@@ -1,18 +1,29 @@
 section .data
-	word staticInit = 1
-	global word globalInit = 1
+	qword msgA = 0x77202C6F6C6C6568
+	qword msgB = 0x21646C726F ;no support for strings yet
 
-section .bss
-	word staticVar
-	extern word externVar
-	
 section .text
-	extern externFunc
+	extern GetStdHandle
+	extern WriteConsoleA
 
-	static staticFunc:
-	mov eax, ecx
+
+	global main:
+	mov rcx, msgA
+	mov rax, Print
+	call rax
 	retn
 
-	global globalFunc:
-	;Function definition
+
+	static Print:
+	push rcx     ; saving argument for later
+	mov ecx, -11 ; getting STDIN
+	mov rax, GetStdHandle
+	call rax
+
+	mov rcx, rax ; STDIN
+	pop rdx      ; buffer (argument)
+	mov r8d, 13  ; to write
+	mov r9d, 0   ; not used (characters written)
+	mov rax, WriteConsoleA
+	call rax
 	retn

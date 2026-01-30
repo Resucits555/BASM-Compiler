@@ -11,7 +11,7 @@ inline void WriteCOFFHeader(const fpos_t symtabPos, const SymbolScopeCount& symb
     coff.numberOfSections = symbolCount.sectionSymCount;
     coff.timeDateStamp = time(nullptr);
     coff.pointerToSymbolTable = symtabPos;
-    coff.numberOfSymbols = symbolCount.sum() + fileSymbol;
+    coff.numberOfSymbols = symbolCount.sum() + requiredSymbolSpace;
 
     outFile.write((char*)&coff, sizeof(COFF_Header));
 }
@@ -20,13 +20,16 @@ inline void WriteCOFFHeader(const fpos_t symtabPos, const SymbolScopeCount& symb
 
 
 
-inline void WriteSectionTable(SectionTab& sections, const ubyte sectionSymCount) {
-    for (ubyte sectionI = 1; sectionI < sectionSymCount + 1; sectionI++) {
-        SectionHeader* section = sections.headers + sectionI;
-        strcpy(section->mName, sectionNames[section->section]);
-        section->mCharacteristics = sectionCharacteristics[section->section];
-        section->section = NOSECTION;
-    }
+inline void WriteSectionTable(SectionHeader* sections) {
+    for (ubyte sectionI = 1; sectionI < std::size(sectionNames); sectionI++) {
+        SectionHeader* section = sections;
+        for (; section->sectionIndex != sectionI; section++)
+            if (section - sections > std::size(sectionNames))
+                return;
 
-    outFile.write((char*)&sections + sizeof(SectionHeader), sectionSymCount * sizeof(SectionHeader));
+        strcpy(section->mName, sectionNames[section - sections]);
+        section->mCharacteristics = sectionCharacteristics[section - sections];
+        section->sectionIndex = 0;
+        outFile.write((char*)section, sizeof(SectionHeader));
+    }
 }

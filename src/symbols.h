@@ -87,23 +87,4 @@ struct AuxiliaryCLRToken {
 
 
 
-enum coff_rel_type_amd64 : uint16_t
-{
-    IMAGE_REL_AMD64_ABSOLUTE = 0x0,
-    IMAGE_REL_AMD64_ADDR64 = 0x1,
-    IMAGE_REL_AMD64_ADDR32 = 0x2,
-    IMAGE_REL_AMD64_ADDR32NB = 0x3,
-    IMAGE_REL_AMD64_REL32 = 0x4,
-    IMAGE_REL_AMD64_REL32_1 = 0x5,
-    IMAGE_REL_AMD64_REL32_2 = 0x6,
-    IMAGE_REL_AMD64_REL32_3 = 0x7,
-    IMAGE_REL_AMD64_REL32_4 = 0x8,
-    IMAGE_REL_AMD64_REL32_5 = 0x9,
-    IMAGE_REL_AMD64_SECTION = 0xa,
-    IMAGE_REL_AMD64_SECREL = 0xb,
-    IMAGE_REL_AMD64_SECREL7 = 0xc,
-    IMAGE_REL_AMD64_TOKEN = 0xd,
-    IMAGE_REL_AMD64_SREL32 = 0xe,
-    IMAGE_REL_AMD64_PAIR = 0xf,
-    IMAGE_REL_AMD64_SSPAN32 = 0x10
-};
+extern SizeType getSymbolBytes(const char* str, ErrorData errorData);

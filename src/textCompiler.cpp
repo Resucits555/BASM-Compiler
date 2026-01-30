@@ -8,9 +8,13 @@
 
 
 static ErrorData errorData;
+static COFF_Relocation* currentReloc;
+static COFF_Relocation* relocEnd;
 
 
-static ubyte minBitsToStoreValue(uintmax_t value, bool negative) {
+static ubyte minBitsToStoreValue(uint64_t value, bool negative) {
+    if (value == 0)
+        return 1;
     if (negative)
         value = ~value << 1;
 
@@ -21,12 +25,17 @@ static ubyte minBitsToStoreValue(uintmax_t value, bool negative) {
 
 
 
-static argument getArgument(char* argstr) {
-    for (ubyte chr = 0; chr < strlen(argstr); chr++)
-        argstr[chr] = std::tolower(argstr[chr]);
-
+static std::optional<argument> getRegArgument(char* str) {
     const ubyte strSize = 5;
-    const char registers[][strSize] = {
+    ubyte argLen = strlen(str);
+    if (argLen >= strSize)
+        return std::nullopt;
+
+    char regStr[strSize];
+    for (ubyte chr = 0; str[chr] != NULL; chr++)
+        regStr[chr] = std::tolower(str[chr]);
+
+    static const char registers[][strSize] = {
     "al", "cl", "dl", "bl", "ah", "ch", "dh", "bh", "r8l", "r9l", "r10l", "r11l", "r12l", "r13l", "r14l", "r15l",
     "ax", "cx", "dx", "bx", "sp", "bp", "si", "di", "r8w", "r9w", "r10w", "r11w", "r12w", "r13w", "r14w", "r15w",
     "eax", "ecx", "edx", "ebx", "esp", "ebp", "esi", "edi", "r8d", "r9d", "r10d", "r11d", "r12d", "r13d", "r14d", "r15d",
@@ -37,51 +46,130 @@ static argument getArgument(char* argstr) {
     "st0", "st1", "st2", "st3", "st4", "st5", "st6", "st7",
     "mmx0", "mmx1", "mmx2", "mmx3", "mmx4", "mmx5", "mmx6", "mmx7"*/
     };
-    std::optional<ubyte> reg = findStringInArray(argstr, *registers, std::size(registers), strSize);
+    std::optional<ubyte> reg = findStringInArray(str, *registers, std::size(registers), strSize);
     if (!reg.has_value())
-        //Remove when the other registers are supported too
-        Error(errorData, "Invalid argument. Note that only standard registers from al to r15 are supported in this version");
+        return std::nullopt;
 
-    return { 'r', false, (ubyte)(pow(2, *reg >> 4) * 8), false, (ubyte)(*reg % 16) };
+    argument arg = { (ubyte)(*reg % 16), (ubyte)(pow(2, *reg >> 4) * 8), false, REG };
+    return arg;
 }
 
 
 
 
 
-static SymbolData* findSymbol(const char* name, SymbolData* symtab, const SymbolData* symtabEnd) {
-    char symName[maxLineSize] = "";
+inline static COFF_Relocation* CreateReloc(SymbolData* const symtab, const SymbolData* symtabEnd) {
+    ErrorData errorData = {};
+    srcFile.seekg(0);
+    char inputLine[maxLineSize];
+    ushort relocCount = 0;
 
-    for (SymbolData* symbol = symtab; symbol < symtabEnd; symbol++) {
-        symbol->getName(symName);
-        if (strcmp(name, symName) == 0)
-            return symbol;
-    }
+    do {
+        errorData.incLine();
 
-    Error(errorData, "Symbol could not be found");
+        const fpos_t startOfLine = srcFile.tellg();
+        srcFile.getline(inputLine, FPOSMAX);
+        if (srcFile.fail())
+            ProcessInputError(inputLine, errorData);
+        if (char* comment = strchr(inputLine, ';'))
+            *comment = NULL;
+
+        for (SymbolData* symbol = symtab; symbol < symtabEnd; symbol++) {
+            char symName[maxLineSize];
+            std::ios::iostate state = srcFile.rdstate();
+            const fpos_t ret = srcFile.tellg();
+            symbol->getName(symName);
+            srcFile.clear(state);
+            if (state != 1)
+                srcFile.seekg(ret);
+
+            relocCount += std::regex_search(inputLine, std::regex("\\W" + (std::string)symName + "\\b"))
+                && (startOfLine > symbol->nameRef || startOfLine < symbol->nameRef - 8);
+            symbol += symbol->isDefinedFunction();
+        }
+    } while (!srcFile.eof());
+
+    currentReloc = (COFF_Relocation*)calloc(relocCount, sizeof(COFF_Relocation));
+    relocEnd = currentReloc + relocCount;
+    return currentReloc;
 }
 
 
 
 
 
-inline static void GetArguments(char* inputLine, argument* args) {
+inline static void GetArguments(argument* args, SymbolData* symtab, const SymbolData* symtabEnd, const fpos_t textPos) {
     for (sbyte i = 0; i <= 2; i++) {
         char* argstr = strtok(nullptr, instrDelimiters);
         if (argstr == nullptr)
             return;
 
         argument& arg = args[i];
-        if (std::regex_search(argstr, std::regex("\\D"))) {
-            arg = getArgument(argstr);
-        }
-        else {
-            arg.type = 'I';
+        if (isdigit(*argstr) || *argstr == '-') {
+            arg.addr = IMM;
             if (*argstr == '-')
                 arg.negative = true;
             arg.mutableSize = true;
             arg.val = std::stoull(argstr, nullptr, 0);
-            arg.size = ceil(minBitsToStoreValue(arg.val, arg.negative) / 8.);
+            arg.size = minBitsToStoreValue(arg.val, arg.negative);
+        }
+        else {
+            std::optional<argument> regArg = getRegArgument(argstr);
+            if (regArg.has_value()) {
+                arg = regArg.value();
+            }
+            else {
+                char* symName;
+                if (char* bracket = strchr(argstr, '[')) {
+                    arg.addr = MEM;
+                    *bracket = NULL;
+                    arg.size = (int)getSymbolBytes(argstr, errorData) * 8;
+                    symName = bracket + 1;
+                }
+                else {
+                    arg.addr = IMM;
+                    symName = argstr;
+                }
+
+                if (currentReloc > relocEnd)
+                    CompilerError(errorData, "Relocs don't fit into .reloc. Relocations were miscounted");
+
+                if (strncmp(symName, "rel", 3) == 0) {
+                    symName += 4;
+                    if (char* closeBracket = strchr(symName, ']'))
+                        *closeBracket = NULL;
+                    SymbolData* symbol = findSymbol(symName, symtab, symtabEnd, errorData);
+                    if (symbol->isDefinedFunction()) {
+                        arg.val = symbol->value + textPos - outFile.tellp();
+
+                        //assuming worst case instr lenght to avoid overflowing value
+                        const ubyte instrSizeBuffer = (symbol->value <= 0) * 15;
+                        arg.size = minBitsToStoreValue(symbol->value + instrSizeBuffer, (symbol->value + instrSizeBuffer <= 0));
+                        //TODO: Detect false relocations in CreateReloc() (temporary solution)
+                        relocEnd--;
+
+                        arg.mutableSize = true;
+                        arg.subInstrSize = true;
+                    }
+                    else {
+                        currentReloc->symbolTableIndex = symbol - symtab + requiredSymbolSpace;
+                        currentReloc->type = reloc_type::IMAGE_REL_AMD64_REL32;
+                        arg.relation = RELADDR;
+                    }
+
+                    (void)strtok(nullptr, instrDelimiters);
+                }
+                else {
+                    if (char* closeBracket = strchr(symName, ']'))
+                        *closeBracket = NULL;
+                    currentReloc->symbolTableIndex = findSymbol(symName, symtab, symtabEnd, errorData) - symtab + requiredSymbolSpace;
+                    currentReloc->type = reloc_type::IMAGE_REL_AMD64_ADDR64;
+
+                    arg.relation = ABSADDR;
+                }
+
+                currentReloc++;
+            }
         }
     }
 
@@ -92,7 +180,7 @@ inline static void GetArguments(char* inputLine, argument* args) {
 
 
 
-inline static bool IsCorrectType(argument& textArg, pugi::xml_node argNode, instruction& instr) {
+inline static bool IsCorrectType(argument& textArg, pugi::xml_node argNode, instruction& instr, Requirement& prevReq) {
     char type[4];
     strcpy(type, argNode.first_child().next_sibling().child_value());
 
@@ -101,13 +189,13 @@ inline static bool IsCorrectType(argument& textArg, pugi::xml_node argNode, inst
 
     const ubyte strSize = 4;
     const char _8[][strSize] = { "b", "bs", "bss" };
-    const ubyte _8req[3] = {};
+    const ubyte _8req[std::size(_8)] = {};
     const char _16[][strSize] = { "a", "v", "vds", "vq", "vqp", "vs", "w", "wi", "va", "wa", "wo", "ws" };
-    const ubyte _16req[12] = { SHRINK | DOUBLED, SHRINK, SHRINK, SHRINK, SHRINK, SHRINK, 0, 0, NOSHRINK };
+    const ubyte _16req[std::size(_16)] = { OPERAND | DOUBLED, OPERAND, OPERAND, OPERAND, OPERAND, OPERAND, 0, 0, NOMODIF };
     const char _32[][strSize] = { "a", "d", "di", "dqp", "ds", "p", "ptp", "sr", "v", "vds", "vqp", "vs", "va", "dqa", "da", "do" };
-    const ubyte _32req[16] = { NOSHRINK | DOUBLED, 0, 0, 0, 0, SHRINK, SHRINK, 0, NOSHRINK, NOSHRINK, NOSHRINK, NOSHRINK, ADDRESS };
-    const char _64[][strSize] = { "dqp", "dr", "pi", "psq", "q", "qi", "qp", "vqp", "dqa", "qa", "qs" };
-    const ubyte _64req[11] = { REXW, 0, 0, 0, 0, 0, REXW, REXW, ADDRESS };
+    const ubyte _32req[std::size(_32)] = { NOMODIF | DOUBLED, 0, 0, 0, 0, OPERAND, OPERAND, 0, NOMODIF, NOMODIF, NOMODIF, NOMODIF, ADDRESS };
+    const char _64[][strSize] = { "dqp", "dr", "pi", "psq", "q", "qi", "qp", "vq", "vqp", "dqa", "qa", "qs"};
+    const ubyte _64req[std::size(_64)] = { REXW, 0, 0, 0, 0, 0, REXW, NOMODIF, REXW, ADDRESS };
 
     const char* const operands[] = { *_8, *_16, *_32, *_64 };
     const ubyte* const requirements[] = { _8req, _16req, _32req, _64req };
@@ -116,33 +204,45 @@ inline static bool IsCorrectType(argument& textArg, pugi::xml_node argNode, inst
     retry:
     const std::optional<ubyte> operandI = findStringInArray(type, operands[arrayI], arraySizes[arrayI], strSize);
     if (!operandI.has_value()) {
-        if (textArg.mutableSize && arrayI < 3) {
+        if (textArg.addr == IMM && arrayI < 3) {
             arrayI++;
             goto retry;
         }
         return false;
     }
 
-    if (textArg.type == 'I')
+    if (textArg.addr == IMM)
         instr.immediateSize = pow(2, arrayI);
 
 
-    const ubyte requirement = requirements[arrayI][*operandI];
+    const ubyte req = requirements[arrayI][*operandI];
 
-    if (requirement) {
-        const ubyte prefixValues[3] = { operandSizePrefix, addressSizePrefix, REX.W };
-        for (ubyte reqI = 1; reqI < NOSHRINK; reqI++) {
-            if ((requirement & 0x7) == reqI && std::find(instr.prefixes, instr.prefixes + 4, prefixValues[reqI - 1]) == instr.prefixes + 4)
-                instr.addPrefix(prefixValues[reqI - 1]);
+    if (req & 3) {
+        if ((prevReq & 7 && prevReq != req)) {
+            if (textArg.addr == IMM && arrayI < 3) {
+                arrayI++;
+                goto retry;
+            }
+            else {
+                return false;
+            }
         }
 
-        if (requirement & NOSHRINK) {
-            if (std::find(instr.prefixes, instr.prefixes + 4, operandSizePrefix) != instr.prefixes + 4
-                || std::find(instr.prefixes, instr.prefixes + 4, addressSizePrefix) != instr.prefixes + 4)
-                return false;
+        const ubyte prefixValues[] = { 0, operandSizePrefix, addressSizePrefix, REX.W };
+        if (!memchr(instr.prefixes, req, std::size(instr.prefixes)))
+            instr.addPrefix(prefixValues[req]);
+    }
+    else if (prevReq & 3 && req & NOMODIF) {
+        if (textArg.addr == IMM && arrayI < 3) {
+            arrayI++;
+            goto retry;
+        }
+        else {
+            return false;
         }
     }
 
+    prevReq = (Requirement)req;
     return true;
 }
 
@@ -150,7 +250,7 @@ inline static bool IsCorrectType(argument& textArg, pugi::xml_node argNode, inst
 
 //Returns instruction data if it has fitting arguments etc., otherwise returns nullopt
 inline static std::optional<instruction> IsFittingInstruction(const pugi::xml_node pri_opcd, const pugi::xml_node syntax, argument* args) {
-    instruction instr;
+    instruction instr{};
     if (strcmp(pri_opcd.parent().name(), "two-byte") == 0) {
         std::cout << syntax.parent().parent().parent().name();
         instr.opcode[0] = 0x0F;
@@ -162,10 +262,20 @@ inline static std::optional<instruction> IsFittingInstruction(const pugi::xml_no
     po = std::stoi(pri_opcd.first_attribute().value(), nullptr, 16);
     
     ubyte textArgCounter = 0;
-    for (;textArgCounter < 2 && args[textArgCounter].type != NULL; textArgCounter++);
+    for (;textArgCounter < 2 && args[textArgCounter].addr != NULL; textArgCounter++);
 
     instr.modrm = 0b11000000;
 
+
+    if (pugi::xml_node mandatoryPref = syntax.parent().child("pref"))
+        instr.addPrefix(std::stoi(mandatoryPref.child_value(), nullptr, 16));
+    if (pugi::xml_node opcd_ext = syntax.parent().child("opcd_ext")) {
+        instr.modrmUsed = true;
+        instr.modrm |= std::stoi(opcd_ext.child_value()) << 3;
+    }
+
+
+    Requirement prevReq = (Requirement)0;
 
     ubyte entryArgCounter = 0;
     for (pugi::xml_node argNode = syntax.first_child().next_sibling();
@@ -175,11 +285,11 @@ inline static std::optional<instruction> IsFittingInstruction(const pugi::xml_no
 
 
         char addressing[4];
-        if (argNode.first_child().type() == pugi::node_null) {
+        if (argNode.first_child().first_child().type() == pugi::node_null) {
             if (*argNode.child_value() == 'S')
                 continue;
             strcpy(addressing, argNode.child_value());
-            argument entryArg = getArgument(addressing);
+            std::optional<argument> entryArg = getRegArgument(addressing);
             if (entryArg != textArg)
                 return std::nullopt;
 
@@ -192,33 +302,73 @@ inline static std::optional<instruction> IsFittingInstruction(const pugi::xml_no
         if (addressing[1] != NULL)
             continue;
 
-        switch (textArg.type) {
-        case 'r':
-            switch (addressing[0]) {
+        switch (textArg.addr) {
+        case REG:
+        {
+            bool extension = 0;
+            if (textArg.val >= 8)
+                extension = true;
+
+            switch (*addressing) {
             default:
                 return std::nullopt;
             case 'E':
             case 'H':
             case 'R':
                 instr.modrmUsed = true;
-                instr.modrm |= textArg.val;
+                instr.modrm |= textArg.val - (8 * extension);
+                instr.rex |= REX.B * extension;
                 break;
             case 'G':
                 instr.modrmUsed = true;
-                instr.modrm |= textArg.val << 3;
+                instr.modrm |= textArg.val - (8 * extension) << 3;
+                instr.rex |= REX.R * extension;
                 break;
             case 'Z':
+                if (extension)
+                    return std::nullopt;
                 po += textArg.val;
             }
             break;
-        case 'I':
-            if (*addressing != 'I')
+        }
+        case IMM:
+            if (*addressing != 'I' && *addressing != 'J')
                 return std::nullopt;
-            instr.immediate = textArg.val;
+
+            switch (textArg.relation) {
+            case NORELATION:
+                instr.immediate = textArg.val;
+                break;
+            case ABSADDR:
+                textArg.size = 64;
+                instr.reloc = (instr_reloc)((int)instr.reloc | (int)instr_reloc::IMM);
+                break;
+            case RELADDR:
+                textArg.size = 32;
+                instr.reloc = (instr_reloc)((int)instr.reloc | (int)instr_reloc::IMM);
+            }
+            break;
+        case MEM:
+            instr.modrm &= 0b00111111;
+            switch (textArg.relation) {
+            //case NORELATION:   TODO: Take register as address
+            case ABSADDR:
+                if (*addressing != 'A')
+                    return std::nullopt;
+                instr.dispSize = 8;
+                instr.reloc = (instr_reloc)((int)instr.reloc | (int)instr_reloc::DISP);
+                break;
+            case RELADDR:
+                if (*addressing != 'E' && *addressing != 'M')
+                    return std::nullopt;
+                instr.modrm |= 0b101;
+                instr.dispSize = 4;
+                instr.reloc = (instr_reloc)((int)instr.reloc | (int)instr_reloc::DISP);
+            }
         }
 
 
-        if (!IsCorrectType(textArg, argNode, instr))
+        if (!IsCorrectType(textArg, argNode, instr, prevReq))
             return std::nullopt;
 
         entryArgCounter++;
@@ -226,6 +376,9 @@ inline static std::optional<instruction> IsFittingInstruction(const pugi::xml_no
 
     if (textArgCounter != entryArgCounter)
         return std::nullopt;
+
+    if (args->subInstrSize)
+        instr.immediate -= instr.size();
 
     return instr;
 }
@@ -267,17 +420,19 @@ inline static instruction FindInstruction(char* mnemonic, argument* args, const 
     }
 
     if (!bestInstrFound.has_value())
-        Error(errorData, "No fitting opcode found. One of the arguments could be invalid for this instruction");
+        Error(errorData, "No fitting opcode found. One of the arguments could be invalid for this instruction. A \"rel\" could also be missing");
 
-    return *bestInstrFound;
+    return bestInstrFound.value();
 }
 
 
 
 
 
-inline static void WriteToExe(std::ofstream& outFile, instruction instr) {
-    outFile.write((char*)&instr.prefixes, instr.getNextPrefixIndex());
+inline static void WriteToExe(std::ofstream& outFile, instruction instr, const fpos_t textPos) {
+    outFile.write((char*)&instr.prefixes, instr.getPrefixCount());
+    if (instr.rex)
+        outFile.put(instr.rex);
 
     outFile.write((char*)&instr.opcode, instr.primaryOpcodeIndex + 1);
 
@@ -285,8 +440,16 @@ inline static void WriteToExe(std::ofstream& outFile, instruction instr) {
         outFile.put(instr.modrm);
     if (instr.sibUsed)
         outFile.put(instr.sib);
-    
-    outFile.write("\0\0\0\0\0\0\0", instr.dispSize);
+
+    if (instr.reloc == instr_reloc::BOTH)
+        currentReloc[-2].virtualAddress = outFile.tellp() - textPos;
+    else if (instr.reloc == instr_reloc::DISP)
+        currentReloc[-1].virtualAddress = outFile.tellp() - textPos;
+    const char nullstr[16] = "";
+    outFile.write(nullstr, instr.dispSize);
+
+    if ((int)instr.reloc & (int)instr_reloc::IMM)
+        currentReloc[-1].virtualAddress = outFile.tellp() - textPos;
     outFile.write((char*)&instr.immediate, instr.immediateSize);
 }
 
@@ -294,7 +457,7 @@ inline static void WriteToExe(std::ofstream& outFile, instruction instr) {
 
 
 
-inline void CompileSource(SectionTab& sections, SymbolData* const symtab, const SymbolData* symtabEnd) {
+inline void CompileSource(SectionHeader* sections, SymbolData* const symtab, const SymbolData* symtabEnd) {
     pugi::xml_document x86reference;
     const char referencePath[] = "../data/x86reference-master/x86reference.xml";
     pugi::xml_parse_result result = x86reference.load_file(referencePath);
@@ -302,26 +465,29 @@ inline void CompileSource(SectionTab& sections, SymbolData* const symtab, const 
         Error(referencePath + 1, result.description());
     pugi::xml_node one_byte = x86reference.first_child().first_child();
 
+    const fpos_t textPos = sections[TEXT].pointerToRawData;
+
+    COFF_Relocation* reloc = CreateReloc(symtab, symtabEnd);
+
     errorData = {};
     srcFile.seekg(0);
     char inputLine[maxLineSize] = "";
     SymbolData* currentFunction = nullptr;
     bool inTextSection = false;
 
-    while (!srcFile.eof()) {
+    do {
         errorData.incLine();
 
-        const fpos_t startOfLine = srcFile.tellg();
         srcFile.getline(inputLine, FPOSMAX);
 
         if (srcFile.fail())
-            ProcessInputError(inputLine, startOfLine, errorData);
+            ProcessInputError(inputLine, errorData);
 
         if (strncmp(inputLine, "section", 7) == 0) {
             if (inTextSection) {
                 break;
             }
-            else if (strncmp(inputLine, "section .text", 13) == 0) {
+            else if (strncmp(inputLine + 8, ".text", 5) == 0) {
                 inTextSection = true;
                 continue;
             }
@@ -334,32 +500,51 @@ inline void CompileSource(SectionTab& sections, SymbolData* const symtab, const 
             *comment = NULL;
         if (!std::regex_search(inputLine, std::regex("\\S")))
             continue;
-        const bool isSymbol = strchr(inputLine, ':');
 
+
+        if (char* colon = strchr(inputLine, ':')) {
+            *colon = NULL;
+            char* formattedLine = inputLine;
+            while (*formattedLine == ' ' || *formattedLine == '\t')
+                formattedLine++;
+
+            if (strchr(formattedLine, ' ')) {
+                if (currentFunction)
+                    Warning(errorData, "New function declared before returning previous. This could lead to undefined behaviour");
+
+                (void)strtok(formattedLine, instrDelimiters);
+                currentFunction = findSymbol(strtok(nullptr, " :"), symtab, symtabEnd, errorData);
+                currentFunction->value = (int)outFile.tellp() - textPos;
+            }
+            else {
+                findSymbol(strtok(formattedLine, " :"), symtab, symtabEnd, errorData)->value = outFile.tellp() - textPos;
+            }
+            continue;
+        }
 
         char* firstToken = strtok(inputLine, instrDelimiters);
         if (strncmp(firstToken, "extern", 7) == 0)
             continue;
-        if (isSymbol) {
-            currentFunction = findSymbol(strtok(nullptr, " :"), symtab, symtabEnd);
-            currentFunction->value = (int)outFile.tellp() - sections.text()->mPointerToRawData;
-            srcFile.ignore(FPOSMAX, '\n');
-            continue;
-        }
 
         instruction instr;
         argument args[2];
-        GetArguments(inputLine, args);
+        GetArguments(args, symtab, symtabEnd, textPos);
 
         instr = FindInstruction(firstToken, args, one_byte);
 
-        WriteToExe(outFile, instr);
+        WriteToExe(outFile, instr, textPos);
 
         if (strcmp(firstToken, "RETN") == 0 && currentFunction) {
             AuxiliaryFunctionDefinition* aux = (AuxiliaryFunctionDefinition*)currentFunction + 1;
-            aux->TotalSize = (uint32_t)outFile.tellp() - currentFunction->value - sections.text()->mPointerToRawData;
+            aux->TotalSize = (uint32_t)outFile.tellp() - currentFunction->value - textPos;
+            currentFunction = nullptr;
         }
-    }
+    } while (!srcFile.eof());
     
-    sections.text()->mSizeOfRawData = (uint32_t)outFile.tellp() - sections.text()->mPointerToRawData;
+    sections[TEXT].sizeOfRawData = (uint32_t)outFile.tellp() - textPos;
+    sections[TEXT].pointerToRelocations = outFile.tellp();
+    sections[TEXT].numberOfRelocations = relocEnd - reloc;
+    outFile.write((char*)reloc, sections[TEXT].numberOfRelocations * sizeof(COFF_Relocation));
+    //Heap corruption when spaces after variable
+    free(reloc);
 }

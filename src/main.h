@@ -26,18 +26,17 @@ namespace fs = std::filesystem;
 
 const ushort maxLineSize = 255;
 
-
-const double sectionAlignment = 0x1000;
-const double fileAlignment = 0x200;
-
-const char sectionNames[][9] = { "ERROR", ".text", ".bss", ".data", ".rdata", ".comment", ".drectve"};
+const char sectionNames[][9] = { "ERROR", ".text", ".comment", ".drectve", ".bss", ".data", ".rdata" };
 constexpr ubyte sectionCount = std::size(sectionNames) - 1;
 enum Section : int8_t {
-    ABS = -1,
+    ABSOLUTE = -1,
     NOSECTION,
     TEXT,
-    BSS,
-    DATA
+    COMMENTSEC,
+    DRECTVE,
+    BSS, //section BSS and above should only save variables
+    DATA,
+    RDATA
 };
 
 extern std::ofstream outFile;
@@ -46,9 +45,8 @@ extern const char* srcPathStr;
 
 
 const fpos_t FPOSMAX = std::numeric_limits<fpos_t>::max();
-const int terminatingNull = 1;
-const ushort fileSymbol = 2;
-
+const ubyte terminatingNull = 1;
+const ubyte requiredSymbolSpace = 2;
 
 
 
@@ -89,34 +87,41 @@ enum class symbol_class : uint8_t {
 
 
 
-
-struct SectionHeader {
-    char mName[8] = "";
-    char unused1[8];
-    uint32_t mSizeOfRawData = 0;
-    uint32_t mPointerToRawData = 0;
-    Section section = Section::NOSECTION;
-    char unused2[11];
-    uint32_t mCharacteristics = 0;
+enum reloc_type : uint16_t
+{
+    IMAGE_REL_AMD64_ABSOLUTE = 0x0,
+    IMAGE_REL_AMD64_ADDR64 = 0x1,
+    IMAGE_REL_AMD64_ADDR32 = 0x2,
+    IMAGE_REL_AMD64_ADDR32NB = 0x3,
+    IMAGE_REL_AMD64_REL32 = 0x4,
+    IMAGE_REL_AMD64_REL32_1 = 0x5,
+    IMAGE_REL_AMD64_REL32_2 = 0x6,
+    IMAGE_REL_AMD64_REL32_3 = 0x7,
+    IMAGE_REL_AMD64_REL32_4 = 0x8,
+    IMAGE_REL_AMD64_REL32_5 = 0x9,
+    IMAGE_REL_AMD64_SECTION = 0xa,
+    IMAGE_REL_AMD64_SECREL = 0xb,
+    IMAGE_REL_AMD64_SECREL7 = 0xc,
+    IMAGE_REL_AMD64_TOKEN = 0xd,
+    IMAGE_REL_AMD64_SREL32 = 0xe,
+    IMAGE_REL_AMD64_PAIR = 0xf,
+    IMAGE_REL_AMD64_SSPAN32 = 0x10
 };
 
 
 
-extern NORETURN void CompilerError(const char* message);
-struct SectionTab {
-    SectionHeader headers[sectionCount + 1];
 
-    SectionHeader* header(Section section) {
-        for (ubyte sectionI = 1; sectionI <= sectionCount; sectionI++) {
-            if (headers[sectionI].section == section)
-                return headers + sectionI;
-        }
-        CompilerError("Tried to find non-existing section");
-    }
 
-    inline SectionHeader* text() {
-        return headers + 1;
-    }
+struct SectionHeader {
+    char mName[8] = "";
+    char unused1[8];
+    uint32_t sizeOfRawData = 0;
+    uint32_t pointerToRawData = 0;
+    uint32_t pointerToRelocations = 0;
+    char unused2[4];
+    uint16_t numberOfRelocations = 0;
+    uint16_t sectionIndex = 0;
+    uint32_t mCharacteristics = 0;
 };
 
 
@@ -138,30 +143,55 @@ public:
 
 
 
-extern void ProcessInputError(char* inputLine, const fpos_t startOfLine, const ErrorData& errorData);
-#pragma pack(push, 2)
+enum class SizeType : uint16_t {
+    NONE,
+    BYTE,
+    WORD,
+    FUNCTION,
+    DWORD,
+    LABEL,
+    QWORD = 8
+};
+
+
+
+extern void ProcessInputError(char* inputLine, const ErrorData& errorData);
+
 //Has to be same size as COFF_Symbol (in symbols.h)
+#pragma pack(push, 2)
 struct SymbolData {
     fpos_t nameRef = 0;
     uint32_t value = 0;
     int16_t sectionNumber = NOSECTION;
-    uint16_t size = 0;
+    enum SizeType size = SizeType::NONE;
     enum symbol_class storageClass = symbol_class::IMAGE_SYM_CLASS_NULL;
     uint8_t nameLen = 0;
 
     void getName(char* str) const {
-        srcFile.seekg(nameRef);
-        srcFile.getline(str, nameLen);
-
-        if (srcFile.bad())
-            ProcessInputError(str, nameRef, {});
         srcFile.clear();
+        srcFile.seekg(nameRef);
+        srcFile.get(str, nameLen);
+
+        if (srcFile.bad()) {
+            char errIntro[33 + _MAX_PATH] = "ERROR: Failed to read from file ";
+            perror(strcat(errIntro, srcPathStr));
+            exit(-1);
+        }
     }
 
-    inline bool hasFunctionAux() const {
-        const ubyte functionSize = 0;
-        return (sectionNumber && size == functionSize);
+    inline bool isDefinedFunction() const {
+        return (sectionNumber && size == SizeType::FUNCTION);
     }
+};
+
+
+
+
+struct COFF_Relocation
+{
+    uint32_t virtualAddress;
+    uint32_t symbolTableIndex;
+    reloc_type type;
 };
 #pragma pack(pop)
 
@@ -176,13 +206,14 @@ struct SymbolScopeCount {
     ushort globalSymCount = 0;
     ushort externSymCount = 0;
     ubyte sectionSymCount = 0;
+    ushort labelCount = 0;
 
     ushort getReducedSymtabSize() const {
-        return staticSymCount + globalSymCount + externSymCount + auxiliary;
+        return staticSymCount + globalSymCount + externSymCount + auxiliary + labelCount;
     }
 
     inline ushort sum() const {
-        return getReducedSymtabSize() + 2 * sectionSymCount;
+        return 2 * sectionSymCount + getReducedSymtabSize();
     }
 
     inline SymbolData* getReducedSymtabEnd(const SymbolData* const symtab) const {
@@ -201,13 +232,12 @@ extern NORETURN void Error(const char* path, const char* message);
 extern NORETURN void Error(const ErrorData errorData, const char* message);
 extern NORETURN void CompilerError(const char* message);
 extern NORETURN void CompilerError(const ErrorData errorData, const char* message);
-extern void ProcessInputError(char* inputLine, const fpos_t startOfLine, const ErrorData& errorData);
 extern std::optional<ubyte> findStringInArray(const char* string, const char* array, ushort arraySize, const ubyte arrayStrLen);
+extern SymbolData* findSymbol(const char* name, SymbolData* symtab, const SymbolData* symtabEnd, ErrorData errorData);
 
-extern SymbolScopeCount CountSymbols();
-extern SymbolData* FindSymbols(const SymbolScopeCount& symbolCount, SectionTab& sections);
-extern void CompileSource(SectionTab& sections, SymbolData* const symtab, const SymbolData* symtabEnd);
-extern inline void WriteData(SymbolData* const symtab, const SymbolData* symtabEnd, SectionTab& sections);
-extern void WriteSymbolTable(const fs::path srcPath, SectionTab& sections, SymbolData* const symtab, const SymbolScopeCount& symbolCount);
+extern SymbolScopeCount CountSymbols(SectionHeader* sections);
+extern SymbolData* FindSymbols(const SymbolScopeCount& symbolCount, SectionHeader* sections);
+extern void CompileSource(SectionHeader* sections, SymbolData* const symtab, const SymbolData* symtabEnd);
+extern void WriteSymbolTable(const fs::path srcPath, SectionHeader* sections, SymbolData* const symtab, const SymbolScopeCount& symbolCount);
 extern void WriteCOFFHeader(const fpos_t symtabPos, const SymbolScopeCount& symbolCount);
-extern void WriteSectionTable(SectionTab& sections, const ubyte sectionSymCount);
+extern void WriteSectionTable(SectionHeader* sections);

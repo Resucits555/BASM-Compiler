@@ -13,15 +13,36 @@ const REX_t REX;
 
 
 
+enum addressing : ubyte {
+    NOARG,
+    REG,
+    MEM,
+    IMM
+};
+
+
+
+enum addressRelation : ubyte {
+    NORELATION,
+    ABSADDR,
+    RELADDR
+};
+
+
+
+
 struct argument {
-    char type = NULL;
-    bool mutableSize = false;
-    ubyte size = 0;
-    bool negative = false;
     uint64_t val = 0;
+    //size of final variable. Like in [rax], this would represent the size of the referenced address
+    uint16_t size = 0;
+    bool mutableSize = false;
+    enum addressing addr = NOARG;
+    enum addressRelation relation = NORELATION;
+    bool negative = false;
+    bool subInstrSize = false; //for relative jumps
 
     friend bool operator!=(const argument& arg1, const argument& arg2) {
-        if (arg1.type == arg2.type && arg1.size == arg2.size && arg1.negative == arg2.negative && arg1.val == arg2.val)
+        if (arg1.addr == arg2.addr && arg1.size == arg2.size && arg1.negative == arg2.negative && arg1.val == arg2.val)
             return false;
         else
             return true;
@@ -31,10 +52,19 @@ struct argument {
 
 
 
+enum class instr_reloc : ubyte {
+    NONE,
+    DISP,
+    IMM,
+    BOTH
+};
+
+
+
 class instruction {
-    ubyte nextPrefixIndex = 0;
 public:
     ubyte prefixes[4] = {};
+    ubyte rex = 0;
 
     ubyte opcode[3] = {};
     ubyte primaryOpcodeIndex = 0;
@@ -44,31 +74,39 @@ public:
     ubyte sib = 0;
     bool sibUsed = false;
 
+    instr_reloc reloc = instr_reloc::NONE;
     ubyte dispSize = 0;
     ubyte immediateSize = 0;
     uint64_t immediate = 0;
 
-    void addPrefix(const ubyte& prefix) {
-        prefixes[nextPrefixIndex] = prefix;
-        nextPrefixIndex++;
+    ubyte getPrefixCount() const {
+        ubyte prefixI = 0;
+        for (; prefixes[prefixI] != 0; prefixI++);
+        return prefixI;
     }
 
-    sbyte getNextPrefixIndex() const {
-        return nextPrefixIndex;
+    void addPrefix(const ubyte prefix) {
+        if (prefix >= 0x40 && prefix < 0x50) {
+            rex |= prefix;
+        }
+        else {
+            ubyte prefixI = getPrefixCount();
+            prefixes[prefixI] = prefix;
+        }
     }
 
     ubyte size() const {
-        return nextPrefixIndex + (primaryOpcodeIndex + 1) + modrmUsed + sibUsed + dispSize + immediateSize;
+        return getPrefixCount() + (primaryOpcodeIndex + 1) + modrmUsed + sibUsed + dispSize + immediateSize;
     }
 };
 
 
 
 
-enum requirements {
-    SHRINK = 1,   //needs operand size prefix
+enum Requirement {
+    OPERAND = 1,  //needs operand size prefix
     ADDRESS = 2,  //needs address size prefix
-    REXW = 3,     //needs REXW prefix
-    NOSHRINK = 4, //no size modifying allowed
+    REXW = 3,     //needs REX.W prefix
+    NOMODIF = 4,  //no size modifying allowed
     DOUBLED = 8   //see 'a' operand type
 };
