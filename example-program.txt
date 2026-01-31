@@ -1,6 +1,5 @@
 section .data
-	qword msgA = 0x77202C6F6C6C6568
-	qword msgB = 0x21646C726F ;no support for strings yet
+	byte msgA = "hello, world!", 0
 
 section .text
 	extern GetStdHandle
