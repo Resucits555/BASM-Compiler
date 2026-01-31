@@ -5,13 +5,13 @@
 
 
 static bool isValidSymbol(const char* str, Section section) {
-    const char regexes[][42] = {
+    const char regexes[][45] = {
     "[a-zA-Z]{6} [a-zA-Z_]\\w*:?\\s*",
     "",
     "",
     "(extern )?[a-zA-Z]+ [a-zA-Z_]\\w*\\s*",
-    "(global )?[a-zA-Z]+ [a-zA-Z_]\\w* = \\w+\\s*",
-    "(global )?[a-zA-Z]+ [a-zA-Z_]\\w* = \\w+\\s*" };
+    "(global )?[a-zA-Z]+ [a-zA-Z_]\\w* = \"?.*\"?\\s*",
+    "(global )?[a-zA-Z]+ [a-zA-Z_]\\w* = \"?.*\"?\\s*" };
 
     return std::regex_match(str, std::regex(regexes[section - 1]));
 }
@@ -126,6 +126,38 @@ inline SymbolScopeCount CountSymbols(SectionHeader* sections) {
 
 
 
+inline static ulong InitializeSymbol(SymbolData* symbol, const char* nameEnd, ErrorData errorData) {
+    ulong dataSize = 0;
+    const char* init = nameEnd + 2;
+
+    while (*(init - 2)) {
+        if (*init == '"') {
+            const char* stringEnd = strrchr(init, '"') - 1;
+            outFile.write(init + 1, stringEnd - init);
+            dataSize += stringEnd - init;
+
+            init = stringEnd + 4;
+        }
+        else {
+            long long varVal;
+            size_t len;
+            try { varVal = std::stoll(init, &len, 0); }
+            catch (std::exception e) {
+                Error(errorData, e.what());
+            }
+            outFile.write((char*)&varVal, (int)symbol->size);
+            dataSize += (ulong)symbol->size;
+
+            init += len + 3;
+        }
+    }
+
+    return dataSize;
+}
+
+
+
+
 inline SymbolData* FindSymbols(const SymbolScopeCount& symbolCount, SectionHeader* sections) {
     SymbolData* symtab = (SymbolData*)calloc((size_t)symbolCount.sum(), sizeof(SymbolData));
     if (symtab == nullptr)
@@ -141,6 +173,7 @@ inline SymbolData* FindSymbols(const SymbolScopeCount& symbolCount, SectionHeade
     AuxiliaryFunctionDefinition* prevAux = nullptr;
     char inputLine[maxLineSize] = "";
 
+    const char* name;
     do {
         errorData.incLine();
 
@@ -190,7 +223,7 @@ inline SymbolData* FindSymbols(const SymbolScopeCount& symbolCount, SectionHeade
                 symbol->nameRef = (srcFile.tellg() - srcFile.gcount()) + (firstToken - formattedLine);
                 symbol->nameLen = strlen(firstToken) + terminatingNull;
                 symbol++;
-                continue;
+                goto nextSymbol;
             }
         }
         else {
@@ -208,24 +241,18 @@ inline SymbolData* FindSymbols(const SymbolScopeCount& symbolCount, SectionHeade
         }
 
 
-        const char* name = strtok(nullptr, " :");
+        name = strtok(nullptr, " :");
         symbol->nameRef = (srcFile.tellg() - srcFile.gcount()) + (name - formattedLine);
         symbol->nameLen = strlen(name) + terminatingNull;
 
 
         if (currentSection >= BSS) {
-            if (currentSection > BSS) {
-                char* init = strtok(nullptr, " =");
-                long long varVal;
-                try { varVal = std::stoll(init, nullptr, 0); }
-                catch (std::exception e) {
-                    Error(errorData, e.what());
-                }
-                outFile.write((char*)&varVal, (int)symbol->size);
-            }
+            ulong dataSize = (ulong)symbol->size;
+            if (currentSection > BSS)
+                dataSize = InitializeSymbol(symbol, name + symbol->nameLen, errorData);
 
             symbol->value = sections[currentSection].sizeOfRawData;
-            sections[currentSection].sizeOfRawData += (int)symbol->size;
+            sections[currentSection].sizeOfRawData += dataSize;
         }
 
 
@@ -236,9 +263,9 @@ inline SymbolData* FindSymbols(const SymbolScopeCount& symbolCount, SectionHeade
             }
             prevAux = (AuxiliaryFunctionDefinition*)symbol + 1;
             symbol++;
-            *prevAux = {};
         }
 
+        nextSymbol:
         symbol++;
         if (symbol > symtabEnd)
             CompilerError(errorData, "Symbols don't fit into symtab. Symbols were miscounted");

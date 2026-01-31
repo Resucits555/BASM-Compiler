@@ -42,7 +42,9 @@ There are three keywords that define the scope of a variable or function declara
 A "static" symbol is inaccessible to the files this file gets linked to.<br>
 A "global" symbol is accessible to other files, it is therefore exported.<br>
 An "extern" symbol is imported from another file.<br>
-The keyword "static" is used exclusively for functions, variables must not have that keyword.
+The keyword "static" is used exclusively for functions, variables must not have that keyword.<br>
+
+Note that spaces around '=' or after commas are required, unlike in other languages and compilers.
 
 
 
@@ -54,24 +56,27 @@ More types could be added.
 
 
 
-### .data section
+### initialized data sections
 
-This section contains initialised modifiable data.
-The syntax in this section looks like this:<br>
+These sections contain initialized modifiable data.
+The syntax in these sections looks like this:<br>
 [global] \<size> \<name> = \<value><br>
 
-Notice that the spaces around '=' are required.<br>
-Global variables have to be initialised.
+Variables in this section have to be initialized.<br>
+
+For any string, use doubled quotation marks: "abc".
+Quotation marks inside the string do not need to be marked in any way, 
+they're taken as any other character in the string.
 
 
 
 ### .bss section
 
-This section contains uninitialised modifiable data.
+This section contains uninitialized modifiable data.
 The syntax is similar to the .data section's syntax:<br>
 [extern] \<size> \<name><br>
 
-Extern variables are not allowed to be initialised.
+Extern variables must not be initialized.
 
 
 
