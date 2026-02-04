@@ -111,7 +111,7 @@ SymbolData* findSymbol(const char* name, SymbolData* symtab, const SymbolData* s
         srcFile.clear(state);
         if (state != 1)
             srcFile.seekg(ret);
-        if (strncmp(name, symName, strlen(name)) == 0)
+        if (strcmp(name, symName) == 0)
             return symbol;
         if (symbol->isDefinedFunction())
             symbol++;
