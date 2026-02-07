@@ -1,5 +1,6 @@
-section .data
-	byte msgA = "hello, world!", 0
+section .rdata
+	qword msg = "hello, world!"
+
 
 section .text
 	extern GetStdHandle
@@ -7,22 +8,21 @@ section .text
 
 
 	global main:
-	mov rcx, msgA
-	mov rax, Print
-	call rax
+	mov rcx, msg ; buffer
+	mov edx, 13  ; msglen
+	call rel Print
 	retn
 
 
 	static Print:
-	push rcx     ; saving argument for later
+	push edx
+	push rcx
 	mov ecx, -11 ; getting STDIN
-	mov rax, GetStdHandle
-	call rax
+	call rel GetStdHandle
 
-	mov rcx, rax ; STDIN
-	pop rdx      ; buffer (argument)
-	mov r8d, 13  ; to write
+	mov rcx, rax ; STDOUT
+	pop rdx      ; buffer
+	pop r8d      ; to write (msglen)
 	mov r9d, 0   ; not used (characters written)
-	mov rax, WriteConsoleA
-	call rax
+	call rel WriteConsoleA
 	retn

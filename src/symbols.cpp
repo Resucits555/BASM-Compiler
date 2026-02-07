@@ -26,7 +26,7 @@ SizeType getSymbolBytes(const char* str, ErrorData errorData) {
 
     std::optional<ubyte> typeI = findStringInArray(str, *fundamentalTypes, std::size(fundamentalTypes), strSize);
     if (!typeI.has_value())
-        Error(errorData, "Invalid variable type");
+        Error(errorData, "Invalid variable type. Note that memory access needs a type");
 
     return (SizeType)pow(2, *typeI);
 }
@@ -101,7 +101,7 @@ inline SymbolScopeCount CountSymbols(SectionHeader* sections) {
         if (!isValidSymbol(formattedLine, currentSection)) {
             if (std::regex_match(formattedLine, std::regex("\\s*\\.*[a-zA-Z_]\\w*:\\s*")))
                 symbolCount.labelCount++;
-            else if (currentSection != TEXT)
+            else if (currentSection != TEXT || strchr(formattedLine, ':'))
                 Error(errorData, "Invalid symbol");
             continue;
         }
@@ -130,7 +130,7 @@ inline static ulong InitializeSymbol(SymbolData* symbol, const char* nameEnd, Er
     ulong dataSize = 0;
     const char* init = nameEnd + 2;
 
-    while (*(init - 2)) {
+    do {
         if (*init == '"') {
             const char* stringEnd = strrchr(init, '"') - 1;
             outFile.write(init + 1, stringEnd - init);
@@ -148,9 +148,9 @@ inline static ulong InitializeSymbol(SymbolData* symbol, const char* nameEnd, Er
             outFile.write((char*)&varVal, (int)symbol->size);
             dataSize += (ulong)symbol->size;
 
-            init += len + 3;
+            init += len + 2;
         }
-    }
+    } while (*(init - 2));
 
     return dataSize;
 }
@@ -204,8 +204,11 @@ inline SymbolData* FindSymbols(const SymbolScopeCount& symbolCount, SectionHeade
             Error(errorData, "Characters found outside of any section");
 
         bool isLabel = false;
-        if (!isValidSymbol(formattedLine, (Section)currentSection) && !(isLabel = strchr(formattedLine, ':')))
-            continue;
+        if (!isValidSymbol(formattedLine, (Section)currentSection)) {
+            if (std::regex_match(formattedLine, std::regex("\\s*\\.*[a-zA-Z_]\\w*:\\s*")))
+                isLabel = true;
+            else continue;
+        }
 
         const char* firstToken = strtok(formattedLine, " :");
         Scope scope = getScope(firstToken);
@@ -222,7 +225,6 @@ inline SymbolData* FindSymbols(const SymbolScopeCount& symbolCount, SectionHeade
                 symbol->size = SizeType::LABEL;
                 symbol->nameRef = (srcFile.tellg() - srcFile.gcount()) + (firstToken - formattedLine);
                 symbol->nameLen = strlen(firstToken) + terminatingNull;
-                symbol++;
                 goto nextSymbol;
             }
         }
@@ -268,7 +270,7 @@ inline SymbolData* FindSymbols(const SymbolScopeCount& symbolCount, SectionHeade
         nextSymbol:
         symbol++;
         if (symbol > symtabEnd)
-            CompilerError(errorData, "Symbols don't fit into symtab. Symbols were miscounted");
+            CompilerError(errorData, "Symbols don't fit into symtab");
     } while (!srcFile.eof());
 
     return symtab;

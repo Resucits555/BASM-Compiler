@@ -12,11 +12,11 @@ static COFF_Relocation* currentReloc;
 static COFF_Relocation* relocEnd;
 
 
-static ubyte minBitsToStoreValue(uint64_t value, bool negative) {
-    if (value == 0)
-        return 1;
+static ubyte minBitsToStoreValue(uint64_t value, const bool negative) {
     if (negative)
         value = ~value << 1;
+    if (value == 0)
+        return 1;
 
     return floor(log2(value) + 1);
 }
@@ -132,30 +132,17 @@ inline static void GetArguments(argument* args, SymbolData* symtab, const Symbol
                 }
 
                 if (currentReloc > relocEnd)
-                    CompilerError(errorData, "Relocs don't fit into .reloc. Relocations were miscounted");
+                    CompilerError(errorData, "Relocs don't fit into .reloc");
 
                 if (strncmp(symName, "rel", 3) == 0) {
                     symName += 4;
                     if (char* closeBracket = strchr(symName, ']'))
                         *closeBracket = NULL;
+
                     SymbolData* symbol = findSymbol(symName, symtab, symtabEnd, errorData);
-                    if (symbol->isDefinedFunction()) {
-                        arg.val = symbol->value + textPos - outFile.tellp();
-
-                        //assuming worst case instr lenght to avoid overflowing value
-                        const ubyte instrSizeBuffer = (symbol->value <= 0) * 15;
-                        arg.size = minBitsToStoreValue(symbol->value + instrSizeBuffer, (symbol->value + instrSizeBuffer <= 0));
-                        //TODO: Detect false relocations in CreateReloc() (temporary solution)
-                        relocEnd--;
-
-                        arg.mutableSize = true;
-                        arg.subInstrSize = true;
-                    }
-                    else {
-                        currentReloc->symbolTableIndex = symbol - symtab + requiredSymbolSpace;
-                        currentReloc->type = reloc_type::IMAGE_REL_AMD64_REL32;
-                        arg.relation = RELADDR;
-                    }
+                    currentReloc->symbolTableIndex = symbol - symtab + requiredSymbolSpace;
+                    currentReloc->type = reloc_type::IMAGE_REL_AMD64_REL32;
+                    arg.relation = RELADDR;
 
                     (void)strtok(nullptr, instrDelimiters);
                 }
@@ -252,7 +239,6 @@ inline static bool IsCorrectType(argument& textArg, pugi::xml_node argNode, inst
 inline static std::optional<instruction> IsFittingInstruction(const pugi::xml_node pri_opcd, const pugi::xml_node syntax, argument* args) {
     instruction instr{};
     if (strcmp(pri_opcd.parent().name(), "two-byte") == 0) {
-        std::cout << syntax.parent().parent().parent().name();
         instr.opcode[0] = 0x0F;
         instr.primaryOpcodeIndex++;
     }
@@ -332,8 +318,10 @@ inline static std::optional<instruction> IsFittingInstruction(const pugi::xml_no
             break;
         }
         case IMM:
-            if (*addressing != 'I' && *addressing != 'J')
-                return std::nullopt;
+            if (*addressing != 'I') {
+                if (*addressing != 'J' || textArg.relation != RELADDR)
+                    return std::nullopt;
+            }
 
             switch (textArg.relation) {
             case NORELATION:
@@ -377,9 +365,6 @@ inline static std::optional<instruction> IsFittingInstruction(const pugi::xml_no
     if (textArgCounter != entryArgCounter)
         return std::nullopt;
 
-    if (args->subInstrSize)
-        instr.immediate -= instr.size();
-
     return instr;
 }
 
@@ -396,21 +381,23 @@ inline static instruction FindInstruction(char* mnemonic, argument* args, const 
     for (auto pri_opcd = one_byte.first_child(); pri_opcd.type() != pugi::node_null; pri_opcd = pri_opcd.next_sibling()) {
         for (auto entry = pri_opcd.first_child(); entry.type() != pugi::node_null; entry = entry.next_sibling()) {
             for (auto syntax = entry.child("syntax"); strcmp(syntax.name(), "syntax") == 0; syntax = syntax.next_sibling()) {
-                if (strcmp(mnemonic, syntax.first_child().child_value()) == 0) {
-                    std::optional<instruction> newInstruction = IsFittingInstruction(pri_opcd, syntax, args);
-                    if (!newInstruction.has_value())
-                        continue;
+                if (strcmp(mnemonic, syntax.first_child().child_value()) != 0
+                    || (*entry.attribute("mode").value() != 'e' && *entry.next_sibling().attribute("mode").value() == 'e'))
+                    continue;
 
-                    if (bestInstrFound.has_value()) {
-                        if (newInstruction.value().size() < bestInstrSize) {
-                            bestInstrFound = newInstruction;
-                            bestInstrSize = newInstruction.value().size();
-                        }
-                    }
-                    else {
+                std::optional<instruction> newInstruction = IsFittingInstruction(pri_opcd, syntax, args);
+                if (!newInstruction.has_value())
+                    continue;
+
+                if (bestInstrFound.has_value()) {
+                    if (newInstruction.value().size() < bestInstrSize) {
                         bestInstrFound = newInstruction;
                         bestInstrSize = newInstruction.value().size();
                     }
+                }
+                else {
+                    bestInstrFound = newInstruction;
+                    bestInstrSize = newInstruction.value().size();
                 }
             }
         }
@@ -545,6 +532,5 @@ inline void CompileSource(SectionHeader* sections, SymbolData* const symtab, con
     sections[TEXT].pointerToRelocations = outFile.tellp();
     sections[TEXT].numberOfRelocations = relocEnd - reloc;
     outFile.write((char*)reloc, sections[TEXT].numberOfRelocations * sizeof(COFF_Relocation));
-    //Heap corruption when spaces after variable
     free(reloc);
 }

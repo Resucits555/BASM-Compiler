@@ -34,12 +34,11 @@ enum addressRelation : ubyte {
 struct argument {
     uint64_t val = 0;
     //size of final variable. Like in [rax], this would represent the size of the referenced address
-    uint16_t size = 0;
+    ushort size = 0;
     bool mutableSize = false;
     enum addressing addr = NOARG;
     enum addressRelation relation = NORELATION;
     bool negative = false;
-    bool subInstrSize = false; //for relative jumps
 
     friend bool operator!=(const argument& arg1, const argument& arg2) {
         if (arg1.addr == arg2.addr && arg1.size == arg2.size && arg1.negative == arg2.negative && arg1.val == arg2.val)
