@@ -83,8 +83,9 @@ inline static COFF_Relocation* CreateReloc(SymbolData* const symtab, const Symbo
             if (state != 1)
                 srcFile.seekg(ret);
 
-            relocCount += std::regex_search(inputLine, std::regex("\\W" + (std::string)symName + "\\b"))
-                && (startOfLine > symbol->nameRef || startOfLine < symbol->nameRef - 8);
+            std::cmatch matchResult;
+            relocCount += std::regex_search(inputLine, matchResult, std::regex("\\b" + (std::string)symName + "\\b"))
+                && startOfLine + matchResult.position() != symbol->nameRef;
             symbol += symbol->isDefinedFunction();
         }
     } while (!srcFile.eof());

@@ -17,7 +17,7 @@ section .text
 	static Print:
 	push edx
 	push rcx
-	mov ecx, -11 ; getting STDIN
+	mov ecx, -11 ; getting STDOUT
 	call rel GetStdHandle
 
 	mov rcx, rax ; STDOUT
