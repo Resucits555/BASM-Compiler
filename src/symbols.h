@@ -36,7 +36,7 @@ struct COFF_Symbol {
     uint32_t value = 0;
     int16_t sectionNumber = NOSECTION;
     enum symbol_type type = symbol_type::IMAGE_SYM_TYPE_NULL;
-    enum symbol_class storageClass = symbol_class::IMAGE_SYM_CLASS_NULL;
+    enum symbol_class storageClass = symbol_class::SYM_CLASS_NULL;
     uint8_t numberOfAuxSymbols = 0;
 };
 

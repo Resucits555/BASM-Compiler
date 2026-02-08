@@ -33,7 +33,7 @@ enum addressRelation : ubyte {
 
 struct argument {
     uint64_t val = 0;
-    //size of final variable. Like in [rax], this would represent the size of the referenced address
+    //Size of final variable. Like in [rax], this would represent the size of the referenced address
     ushort size = 0;
     bool mutableSize = false;
     enum addressing addr = NOARG;

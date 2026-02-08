@@ -216,7 +216,7 @@ inline SymbolData* FindSymbols(const SymbolScopeCount& symbolCount, SectionHeade
         symbol->sectionNumber = sections[currentSection].sectionIndex;
 
         if (scope == Scope::UNDEF) {
-            symbol->storageClass = symbol_class::IMAGE_SYM_CLASS_STATIC;
+            symbol->storageClass = symbol_class::STATIC;
             if (!isLabel) {
                 symbol->size = getSymbolBytes(firstToken, errorData);
             }
@@ -230,9 +230,9 @@ inline SymbolData* FindSymbols(const SymbolScopeCount& symbolCount, SectionHeade
         }
         else {
             if (scope == Scope::STATIC)
-                symbol->storageClass = symbol_class::IMAGE_SYM_CLASS_STATIC;
+                symbol->storageClass = symbol_class::STATIC;
             else
-                symbol->storageClass = symbol_class::IMAGE_SYM_CLASS_EXTERNAL;
+                symbol->storageClass = symbol_class::EXTERNAL;
 
             if (currentSection != TEXT)
                 symbol->size = getSymbolBytes(strtok(nullptr, " :"), errorData);
@@ -345,7 +345,7 @@ inline void WriteSymbolTable(const fs::path srcPath, SectionHeader* sections, Sy
     file.value = 0;
     file.sectionNumber = -2;
     file.type = symbol_type::IMAGE_SYM_TYPE_NULL;
-    file.storageClass = symbol_class::IMAGE_SYM_CLASS_FILE;
+    file.storageClass = symbol_class::FILE;
     file.numberOfAuxSymbols = 1;
 
     outFile.write((char*)&file, sizeof(COFF_Symbol));
@@ -379,7 +379,7 @@ inline void WriteSymbolTable(const fs::path srcPath, SectionHeader* sections, Sy
         sectionSymbol.value = 0;
         sectionSymbol.sectionNumber = sections[sectionI].sectionIndex;
         sectionSymbol.type = symbol_type::IMAGE_SYM_TYPE_NULL;
-        sectionSymbol.storageClass = symbol_class::IMAGE_SYM_CLASS_STATIC;
+        sectionSymbol.storageClass = symbol_class::STATIC;
         sectionSymbol.numberOfAuxSymbols = 1;
         outFile.write((char*)&sectionSymbol, sizeof(COFF_Symbol));
 

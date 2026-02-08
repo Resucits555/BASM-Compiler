@@ -41,7 +41,7 @@ enum Section : int8_t {
 
 extern std::ofstream outFile;
 extern std::ifstream srcFile;
-extern const char* srcPathStr;
+extern const char* srcPathRaw;
 
 
 const fpos_t FPOSMAX = std::numeric_limits<fpos_t>::max();
@@ -52,60 +52,60 @@ const ubyte requiredSymbolSpace = 2;
 
 
 enum class symbol_class : uint8_t {
-    IMAGE_SYM_CLASS_NULL = 0x0,
-    IMAGE_SYM_CLASS_AUTOMATIC = 0x1,
-    IMAGE_SYM_CLASS_EXTERNAL = 0x2,
-    IMAGE_SYM_CLASS_STATIC = 0x3,
-    IMAGE_SYM_CLASS_REGISTER = 0x4,
-    IMAGE_SYM_CLASS_EXTERNAL_DEF = 0x5,
-    IMAGE_SYM_CLASS_LABEL = 0x6,
-    IMAGE_SYM_CLASS_UNDEFINED_LABEL = 0x7,
-    IMAGE_SYM_CLASS_MEMBER_OF_STRUCT = 0x8,
-    IMAGE_SYM_CLASS_ARGUMENT = 0x9,
-    IMAGE_SYM_CLASS_STRUCT_TAG = 0xa,
-    IMAGE_SYM_CLASS_MEMBER_OF_UNION = 0xb,
-    IMAGE_SYM_CLASS_UNION_TAG = 0xc,
-    IMAGE_SYM_CLASS_TYPE_DEFINITION = 0xd,
-    IMAGE_SYM_CLASS_UNDEFINED_STATIC = 0xe,
-    IMAGE_SYM_CLASS_ENUM_TAG = 0xf,
-    IMAGE_SYM_CLASS_MEMBER_OF_ENUM = 0x10,
-    IMAGE_SYM_CLASS_REGISTER_PARAM = 0x11,
-    IMAGE_SYM_CLASS_BIT_FIELD = 0x12,
-    IMAGE_SYM_CLASS_AUTOARG = 0x13,
-    IMAGE_SYM_CLASS_LASTENT = 0x14,
-    IMAGE_SYM_CLASS_BLOCK = 0x64,
-    IMAGE_SYM_CLASS_FUNCTION = 0x65,
-    IMAGE_SYM_CLASS_END_OF_STRUCT = 0x66,
-    IMAGE_SYM_CLASS_FILE = 0x67,
-    IMAGE_SYM_CLASS_SECTION = 0x68,
-    IMAGE_SYM_CLASS_WEAK_EXTERNAL = 0x69,
-    IMAGE_SYM_CLASS_HIDDEN = 0x6a,
-    IMAGE_SYM_CLASS_CLR_TOKEN = 0x6b,
-    IMAGE_SYM_CLASS_END_OF_FUNCTION = 0xff
+    SYM_CLASS_NULL = 0x0,
+    AUTOMATIC = 0x1,
+    EXTERNAL = 0x2,
+    STATIC = 0x3,
+    REGISTER = 0x4,
+    EXTERNAL_DEF = 0x5,
+    LABEL = 0x6,
+    UNDEFINED_LABEL = 0x7,
+    MEMBER_OF_STRUCT = 0x8,
+    ARGUMENT = 0x9,
+    STRUCT_TAG = 0xa,
+    MEMBER_OF_UNION = 0xb,
+    UNION_TAG = 0xc,
+    TYPE_DEFINITION = 0xd,
+    UNDEFINED_STATIC = 0xe,
+    ENUM_TAG = 0xf,
+    MEMBER_OF_ENUM = 0x10,
+    REGISTER_PARAM = 0x11,
+    BIT_FIELD = 0x12,
+    AUTOARG = 0x13,
+    LASTENT = 0x14,
+    BLOCK = 0x64,
+    FUNCTION = 0x65,
+    END_OF_STRUCT = 0x66,
+    FILE = 0x67,
+    SECTION = 0x68,
+    WEAK_EXTERNAL = 0x69,
+    HIDDEN = 0x6a,
+    CLR_TOKEN = 0x6b,
+    END_OF_FUNCTION = 0xff
 };
 
 
 
 
-enum reloc_type : uint16_t
+enum class amd_reloc_type : uint16_t
 {
-    IMAGE_REL_AMD64_ABSOLUTE = 0x0,
-    IMAGE_REL_AMD64_ADDR64 = 0x1,
-    IMAGE_REL_AMD64_ADDR32 = 0x2,
-    IMAGE_REL_AMD64_ADDR32NB = 0x3,
-    IMAGE_REL_AMD64_REL32 = 0x4,
-    IMAGE_REL_AMD64_REL32_1 = 0x5,
-    IMAGE_REL_AMD64_REL32_2 = 0x6,
-    IMAGE_REL_AMD64_REL32_3 = 0x7,
-    IMAGE_REL_AMD64_REL32_4 = 0x8,
-    IMAGE_REL_AMD64_REL32_5 = 0x9,
-    IMAGE_REL_AMD64_SECTION = 0xa,
-    IMAGE_REL_AMD64_SECREL = 0xb,
-    IMAGE_REL_AMD64_SECREL7 = 0xc,
-    IMAGE_REL_AMD64_TOKEN = 0xd,
-    IMAGE_REL_AMD64_SREL32 = 0xe,
-    IMAGE_REL_AMD64_PAIR = 0xf,
-    IMAGE_REL_AMD64_SSPAN32 = 0x10
+    ABSOLUTE = 0x0,
+    ADDR64 = 0x1,
+    ADDR32 = 0x2,
+    ADDR32NB = 0x3,
+    REL32 = 0x4,
+    REL32_1 = 0x5,
+    REL32_2 = 0x6,
+    REL32_3 = 0x7,
+    REL32_4 = 0x8,
+    REL32_5 = 0x9,
+    SECTION = 0xa,
+    SECREL = 0xb,
+    SECREL7 = 0xc,
+    TOKEN = 0xd,
+    SREL32 = 0xe,
+    PAIR = 0xf,
+    SSPAN32 = 0x10
 };
 
 
@@ -164,7 +164,7 @@ struct SymbolData {
     uint32_t value = 0;
     int16_t sectionNumber = NOSECTION;
     enum SizeType size = SizeType::NONE;
-    enum symbol_class storageClass = symbol_class::IMAGE_SYM_CLASS_NULL;
+    enum symbol_class storageClass = symbol_class::SYM_CLASS_NULL;
     uint8_t nameLen = 0;
 
     void getName(char* str) const {
@@ -174,7 +174,7 @@ struct SymbolData {
 
         if (srcFile.bad()) {
             char errIntro[33 + _MAX_PATH] = "ERROR: Failed to read from file ";
-            perror(strcat(errIntro, srcPathStr));
+            perror(strcat(errIntro, srcPathRaw));
             exit(-1);
         }
     }
@@ -191,7 +191,7 @@ struct COFF_Relocation
 {
     uint32_t virtualAddress;
     uint32_t symbolTableIndex;
-    reloc_type type;
+    amd_reloc_type type;
 };
 #pragma pack(pop)
 

@@ -12,6 +12,43 @@ static COFF_Relocation* currentReloc;
 static COFF_Relocation* relocEnd;
 
 
+#if defined(_WIN32)
+#include <Windows.h>
+
+const char relativeReferencePath[] = "..\\data\\x86reference-master\\x86reference.xml";
+
+static fs::path getExecutablePath() {
+    char pathRaw[_MAX_PATH];
+    GetModuleFileNameA(NULL, pathRaw, _MAX_PATH);
+    return fs::path(pathRaw);
+}
+
+#endif
+
+#ifdef __linux__
+#include <libgen.h>
+#include <unistd.h>
+
+#if defined(__sun)
+#define PROC_SELF_EXE "/proc/self/path/a.out"
+#else
+#define PROC_SELF_EXE "/proc/self/exe"
+#endif
+
+const char relativeReferencePath[] = "../data/x86reference-master/x86reference.xml";
+
+static fs::path getExecutablePath() {
+    char pathRaw[_MAX_PATH];
+    realpath(PROC_SELF_EXE, pathRaw);
+    return fs::path(pathRaw);
+}
+
+#endif
+
+
+
+
+
 static ubyte minBitsToStoreValue(uint64_t value, const bool negative) {
     if (negative)
         value = ~value << 1;
@@ -52,6 +89,22 @@ static std::optional<argument> getRegArgument(char* str) {
 
     argument arg = { (ubyte)(*reg % 16), (ubyte)(pow(2, *reg >> 4) * 8), false, REG };
     return arg;
+}
+
+
+
+
+
+inline static pugi::xml_document OpenReference() {
+    fs::path exePath = getExecutablePath();
+    fs::path referencePath = exePath.parent_path().parent_path().parent_path() / relativeReferencePath;
+
+    pugi::xml_document x86reference;
+    pugi::xml_parse_result result = x86reference.load_file(referencePath.c_str());
+    if (result.status)
+        Error((char*)referencePath.string().c_str(), result.description());
+
+    return x86reference;
 }
 
 
@@ -142,7 +195,7 @@ inline static void GetArguments(argument* args, SymbolData* symtab, const Symbol
 
                     SymbolData* symbol = findSymbol(symName, symtab, symtabEnd, errorData);
                     currentReloc->symbolTableIndex = symbol - symtab + requiredSymbolSpace;
-                    currentReloc->type = reloc_type::IMAGE_REL_AMD64_REL32;
+                    currentReloc->type = amd_reloc_type::REL32;
                     arg.relation = RELADDR;
 
                     (void)strtok(nullptr, instrDelimiters);
@@ -151,7 +204,7 @@ inline static void GetArguments(argument* args, SymbolData* symtab, const Symbol
                     if (char* closeBracket = strchr(symName, ']'))
                         *closeBracket = NULL;
                     currentReloc->symbolTableIndex = findSymbol(symName, symtab, symtabEnd, errorData) - symtab + requiredSymbolSpace;
-                    currentReloc->type = reloc_type::IMAGE_REL_AMD64_ADDR64;
+                    currentReloc->type = amd_reloc_type::ADDR64;
 
                     arg.relation = ABSADDR;
                 }
@@ -175,19 +228,19 @@ inline static bool IsCorrectType(argument& textArg, pugi::xml_node argNode, inst
     ubyte arrayI = log2(textArg.size / 8);
 
 
-    const ubyte strSize = 4;
-    const char _8[][strSize] = { "b", "bs", "bss" };
-    const ubyte _8req[std::size(_8)] = {};
-    const char _16[][strSize] = { "a", "v", "vds", "vq", "vqp", "vs", "w", "wi", "va", "wa", "wo", "ws" };
-    const ubyte _16req[std::size(_16)] = { OPERAND | DOUBLED, OPERAND, OPERAND, OPERAND, OPERAND, OPERAND, 0, 0, NOMODIF };
-    const char _32[][strSize] = { "a", "d", "di", "dqp", "ds", "p", "ptp", "sr", "v", "vds", "vqp", "vs", "va", "dqa", "da", "do" };
-    const ubyte _32req[std::size(_32)] = { NOMODIF | DOUBLED, 0, 0, 0, 0, OPERAND, OPERAND, 0, NOMODIF, NOMODIF, NOMODIF, NOMODIF, ADDRESS };
-    const char _64[][strSize] = { "dqp", "dr", "pi", "psq", "q", "qi", "qp", "vq", "vqp", "dqa", "qa", "qs"};
-    const ubyte _64req[std::size(_64)] = { REXW, 0, 0, 0, 0, 0, REXW, NOMODIF, REXW, ADDRESS };
+    static const ubyte strSize = 4;
+    static const char _8[][strSize] = { "b", "bs", "bss" };
+    static const ubyte _8req[std::size(_8)] = {};
+    static const char _16[][strSize] = { "a", "v", "vds", "vq", "vqp", "vs", "w", "wi", "va", "wa", "wo", "ws" };
+    static const ubyte _16req[std::size(_16)] = { OPERAND | DOUBLED, OPERAND, OPERAND, OPERAND, OPERAND, OPERAND, 0, 0, NOMODIF };
+    static const char _32[][strSize] = { "a", "d", "di", "dqp", "ds", "p", "ptp", "sr", "v", "vds", "vqp", "vs", "va", "dqa", "da", "do" };
+    static const ubyte _32req[std::size(_32)] = { NOMODIF | DOUBLED, 0, 0, 0, 0, OPERAND, OPERAND, 0, NOMODIF, NOMODIF, NOMODIF, NOMODIF, ADDRESS };
+    static const char _64[][strSize] = { "dqp", "dr", "pi", "psq", "q", "qi", "qp", "vq", "vqp", "dqa", "qa", "qs"};
+    static const ubyte _64req[std::size(_64)] = { REXW, 0, 0, 0, 0, 0, REXW, NOMODIF, REXW, ADDRESS };
 
-    const char* const operands[] = { *_8, *_16, *_32, *_64 };
-    const ubyte* const requirements[] = { _8req, _16req, _32req, _64req };
-    constexpr ubyte arraySizes[] = { std::size(_8), std::size(_16), std::size(_32), std::size(_64) };
+    static const char* const operands[] = { *_8, *_16, *_32, *_64 };
+    static const ubyte* const requirements[] = { _8req, _16req, _32req, _64req };
+    static constexpr ubyte arraySizes[] = { std::size(_8), std::size(_16), std::size(_32), std::size(_64) };
 
     retry:
     const std::optional<ubyte> operandI = findStringInArray(type, operands[arrayI], arraySizes[arrayI], strSize);
@@ -446,11 +499,7 @@ inline static void WriteToExe(std::ofstream& outFile, instruction instr, const f
 
 
 inline void CompileSource(SectionHeader* sections, SymbolData* const symtab, const SymbolData* symtabEnd) {
-    pugi::xml_document x86reference;
-    const char referencePath[] = "../data/x86reference-master/x86reference.xml";
-    pugi::xml_parse_result result = x86reference.load_file(referencePath);
-    if (result.status)
-        Error(referencePath + 1, result.description());
+    pugi::xml_document x86reference = OpenReference();
     pugi::xml_node one_byte = x86reference.first_child().first_child();
 
     const fpos_t textPos = sections[TEXT].pointerToRawData;

@@ -4,12 +4,12 @@
 std::ofstream outFile;
 std::ifstream srcFile;
 static fs::path outPath;
-const char* srcPathStr;
+const char* srcPathRaw;
 
 
 
 void Warning(const ErrorData errorData, const char* message) {
-    std::cout << "Warning: " << srcPathStr << " at line " << errorData.getLine() << ": " << message << ".\n\n";
+    std::cout << "Warning: " << srcPathRaw << " at line " << errorData.getLine() << ": " << message << ".\n\n";
 }
 
 
@@ -22,10 +22,10 @@ NORETURN static void ErrorCleanup() {
 
 
 NORETURN void Error(const char* message) {
-    if (srcPathStr == nullptr)
+    if (srcPathRaw == nullptr)
         std::cerr << "ERROR: " << message << ".\n\n";
     else
-        std::cerr << "ERROR: " << srcPathStr << ": " << message << ".\n\n";
+        std::cerr << "ERROR: " << srcPathRaw << ": " << message << ".\n\n";
     ErrorCleanup();
 }
 
@@ -37,20 +37,20 @@ NORETURN void Error(const char* path, const char* message) {
 
 
 NORETURN void Error(const ErrorData errorData, const char* message) {
-    std::cerr << "ERROR: " << srcPathStr << " at line " << errorData.getLine() << ": " << message << ".\n\n";
+    std::cerr << "ERROR: " << srcPathRaw << " at line " << errorData.getLine() << ": " << message << ".\n\n";
     ErrorCleanup();
 }
 
 
 NORETURN void CompilerError(const char* message) {
-    std::cerr << "Compiler error: " << srcPathStr << ": "
+    std::cerr << "Compiler error: " << srcPathRaw << ": "
         << message << ". Please report the bug to the creators of this compiler.\n\n";
     ErrorCleanup();
 }
 
 
 NORETURN void CompilerError(const ErrorData errorData, const char* message) {
-    std::cerr << "Compiler error: " << srcPathStr << " at line " << errorData.getLine() << ": "
+    std::cerr << "Compiler error: " << srcPathRaw << " at line " << errorData.getLine() << ": "
         << message << ". Please report the bug to the creators of this compiler.\n\n";
     ErrorCleanup();
 }
@@ -61,7 +61,7 @@ NORETURN void CompilerError(const ErrorData errorData, const char* message) {
 
 void ProcessInputError(char* inputLine, const ErrorData& errorData) {
     if (srcFile.bad()) {
-        std::string errIntro = "ERROR: Failed to read from file " + (std::string)srcPathStr
+        std::string errIntro = "ERROR: Failed to read from file " + (std::string)srcPathRaw
             + " at line " + std::to_string(errorData.getLine());
         perror(errIntro.c_str());
         exit(-1);
@@ -128,7 +128,10 @@ inline static ubyte GetCommand(const ubyte argc, char** argv) {
     if (argc < 2)
         Error("Command missing. Type \"basm help\" to learn how to use this program");
 
-    char* const command = new char[8];
+    if (strlen(argv[1]) >= 8)
+        Error("Unknown command. Type \"basm help\" to learn how to use this program");
+
+    char command[8];
     strcpy(command, argv[1]);
 
     constexpr ubyte strSize = 8;
@@ -152,7 +155,7 @@ int main(const ubyte argc, char* argv[]) {
     case 0:
     case 1:
     case 2:
-        std::cout << "Usage:\nbasm <command> [<options>] [<file> <file>...]\n\nCommands: \n1. \"help\" Displays long help message\n2. \"compile\"Compile all specified files\n\nFind more in the README file.\n\n";
+        std::cout << "Usage:\nbasm <command> [<options>] [<file> <file>...]\n\nCommands: \n1. \"help\" Displays long help message\n2. \"compile\" Compile all specified files\n\nLearn more in the README file.\n\n";
         exit(0);
     case 3:
         for (ubyte fileI = 2; fileI < argc && argv[fileI][0] != '-'; fileI++) {
@@ -161,7 +164,7 @@ int main(const ubyte argc, char* argv[]) {
             outPath.replace_extension("o");
 
             const std::string srcPathString = srcPath.string();
-            srcPathStr = srcPathString.c_str();
+            srcPathRaw = srcPathString.c_str();
 
             outFile.open(outPath, std::ios::binary);
             if (!outFile.is_open())
@@ -169,7 +172,7 @@ int main(const ubyte argc, char* argv[]) {
             outFile.seekp(0);
 
             srcFile.open(srcPath);
-            if (!srcFile.is_open()) {
+            if (!srcFile.is_open() || srcFile.fail()) {
                 char errIntro[] = "ERROR: Failed to open file";
                 perror(strcat(errIntro, (char*)srcPath.c_str()));
                 exit(-1);
@@ -199,5 +202,5 @@ int main(const ubyte argc, char* argv[]) {
         }
     }
 
-    std::cout << "\nSuccessfully compiled!\n";
+    std::cout << "\nSuccessfully compiled!\n\n";
 }
