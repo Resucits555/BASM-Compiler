@@ -16,12 +16,6 @@ src/symbols.cpp)
 
 SET_TARGET_PROPERTIES(main PROPERTIES OUTPUT_NAME "basm")
 
-
-target_include_directories(main PUBLIC dependencies/mini-rgx/src)
-link_directories(build/dependencies/mini-rgx/Debug)
-add_subdirectory(dependencies/mini-rgx)
-target_link_libraries(main PUBLIC mini-rgx)
-
 target_include_directories(main PUBLIC dependencies/pugixml-1.15/src)
 link_directories(build/dependencies/pugixml-1.15/Debug)
 add_subdirectory(dependencies/pugixml-1.15)

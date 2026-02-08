@@ -12,43 +12,6 @@ static COFF_Relocation* currentReloc;
 static COFF_Relocation* relocEnd;
 
 
-#if defined(_WIN32)
-#include <Windows.h>
-
-const char relativeReferencePath[] = "..\\data\\x86reference-master\\x86reference.xml";
-
-static fs::path getExecutablePath() {
-    char pathRaw[_MAX_PATH];
-    GetModuleFileNameA(NULL, pathRaw, _MAX_PATH);
-    return fs::path(pathRaw);
-}
-
-#endif
-
-#ifdef __linux__
-#include <libgen.h>
-#include <unistd.h>
-
-#if defined(__sun)
-#define PROC_SELF_EXE "/proc/self/path/a.out"
-#else
-#define PROC_SELF_EXE "/proc/self/exe"
-#endif
-
-const char relativeReferencePath[] = "../data/x86reference-master/x86reference.xml";
-
-static fs::path getExecutablePath() {
-    char pathRaw[_MAX_PATH];
-    realpath(PROC_SELF_EXE, pathRaw);
-    return fs::path(pathRaw);
-}
-
-#endif
-
-
-
-
-
 static ubyte minBitsToStoreValue(uint64_t value, const bool negative) {
     if (negative)
         value = ~value << 1;
@@ -91,6 +54,42 @@ static std::optional<argument> getRegArgument(char* str) {
     return arg;
 }
 
+
+
+
+
+#if defined(_WIN32)
+#include <Windows.h>
+
+const char relativeReferencePath[] = "..\\data\\x86reference-master\\x86reference.xml";
+
+static fs::path getExecutablePath() {
+    char pathRaw[_MAX_PATH];
+    GetModuleFileNameA(NULL, pathRaw, _MAX_PATH);
+    return fs::path(pathRaw);
+}
+
+#endif
+
+#ifdef __linux__
+#include <libgen.h>
+#include <unistd.h>
+
+#if defined(__sun)
+#define PROC_SELF_EXE "/proc/self/path/a.out"
+#else
+#define PROC_SELF_EXE "/proc/self/exe"
+#endif
+
+const char relativeReferencePath[] = "../data/x86reference-master/x86reference.xml";
+
+static fs::path getExecutablePath() {
+    char pathRaw[_MAX_PATH];
+    realpath(PROC_SELF_EXE, pathRaw);
+    return fs::path(pathRaw);
+}
+
+#endif
 
 
 
