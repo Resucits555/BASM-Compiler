@@ -101,10 +101,10 @@ std::optional<ubyte> findStringInArray(const char* string, const char* array, co
 
 
 
-SymbolData* findSymbol(const char* name, SymbolData* symtab, const SymbolData* symtabEnd, ErrorData errorData) {
+SymbolData* findSymbol(const char* name, const SymtabArea& symtab, const ErrorData errorData) {
     char symName[maxLineSize] = "";
 
-    for (SymbolData* symbol = symtab; symbol < symtabEnd; symbol++) {
+    for (SymbolData* symbol = symtab.ptr; symbol < symtab.end; symbol++) {
         std::ios::iostate state = srcFile.rdstate();
         fpos_t ret = srcFile.tellg();
         symbol->getName(symName);
@@ -186,15 +186,14 @@ int main(const ubyte argc, char* argv[]) {
             const ushort sectionHeaderSize = 40;
             outFile.seekp(coffHeaderSize + (symbolCount.sectionSymCount * sectionHeaderSize));
 
-            SymbolData* const symtab = FindSymbols(symbolCount, sections);
-            SymbolData* symtabEnd = symbolCount.getReducedSymtabEnd(symtab);
+            const SymtabArea symtab = FindSymbols(symbolCount, sections);
 
-            CompileSource(sections, (SymbolData*)symtab, symtabEnd);
+            CompileSource(sections, symtab);
 
             const fpos_t symtabPos = outFile.tellp();
             WriteSymbolTable(srcPath, sections, symtab, symbolCount);
             srcFile.close();
-            free(symtab);
+            free(symtab.ptr);
 
             WriteCOFFHeader(symtabPos, symbolCount);
             WriteSectionTable(sections);

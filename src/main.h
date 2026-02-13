@@ -187,6 +187,14 @@ struct SymbolData {
 
 
 
+struct SymtabArea {
+    SymbolData* ptr;
+    SymbolData* end;
+};
+
+
+
+
 struct COFF_Relocation
 {
     uint32_t virtualAddress;
@@ -215,10 +223,6 @@ struct SymbolScopeCount {
     inline ushort sum() const {
         return 2 * sectionSymCount + getReducedSymtabSize();
     }
-
-    inline SymbolData* getReducedSymtabEnd(const SymbolData* const symtab) const {
-        return (SymbolData*)(symtab + getReducedSymtabSize());
-    }
 };
 
 
@@ -233,11 +237,11 @@ extern NORETURN void Error(const ErrorData errorData, const char* message);
 extern NORETURN void CompilerError(const char* message);
 extern NORETURN void CompilerError(const ErrorData errorData, const char* message);
 extern std::optional<ubyte> findStringInArray(const char* string, const char* array, ushort arraySize, const ubyte arrayStrLen);
-extern SymbolData* findSymbol(const char* name, SymbolData* symtab, const SymbolData* symtabEnd, ErrorData errorData);
+extern SymbolData* findSymbol(const char* name, const SymtabArea& symtab, const ErrorData errorData);
 
 extern SymbolScopeCount CountSymbols(SectionHeader* sections);
-extern SymbolData* FindSymbols(const SymbolScopeCount& symbolCount, SectionHeader* sections);
-extern void CompileSource(SectionHeader* sections, SymbolData* const symtab, const SymbolData* symtabEnd);
-extern void WriteSymbolTable(const fs::path srcPath, SectionHeader* sections, SymbolData* const symtab, const SymbolScopeCount& symbolCount);
+extern SymtabArea FindSymbols(const SymbolScopeCount& symbolCount, SectionHeader* sections);
+extern void CompileSource(SectionHeader* sections, const SymtabArea& symtab);
+extern void WriteSymbolTable(const fs::path srcPath, SectionHeader* sections, const SymtabArea& symtab, const SymbolScopeCount& symbolCount);
 extern void WriteCOFFHeader(const fpos_t symtabPos, const SymbolScopeCount& symbolCount);
 extern void WriteSectionTable(SectionHeader* sections);

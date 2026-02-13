@@ -1,3 +1,7 @@
+section .bss
+	extern dword STD_OUTPUT_HANDLE
+
+
 section .rdata
 	qword msg = "hello, world!"
 
@@ -9,20 +13,20 @@ section .text
 
 	global main:
 	mov rcx, msg ; buffer
-	mov edx, 13  ; msglen
+	mov rdx, 13  ; msglen
 	call rel Print
 	retn
 
 
 	static Print:
-	push edx
+	push rdx
 	push rcx
 	mov ecx, -11 ; getting STDOUT
 	call rel GetStdHandle
 
 	mov rcx, rax ; STDOUT
 	pop rdx      ; buffer
-	pop r8d      ; to write (msglen)
+	pop r8       ; to write (msglen)
 	mov r9d, 0   ; not used (characters written)
 	call rel WriteConsoleA
 	retn

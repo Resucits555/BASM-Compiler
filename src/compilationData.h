@@ -51,6 +51,34 @@ struct argument {
 
 
 
+struct Modrm {
+    ubyte mod = 0b11;
+    ubyte reg = 0;
+    ubyte rm = 0;
+
+    void write(std::ofstream& outFile) const {
+        ubyte modrm;
+        modrm = (mod << 6) | (reg << 3) | rm;
+        outFile.put(modrm);
+    }
+};
+
+
+
+struct SIB {
+    ubyte scale = 0;
+    ubyte index = 0;
+    ubyte base = 0;
+
+    void write(std::ofstream& outFile) const {
+        ubyte sib;
+        sib = (scale << 6) | (index << 3) | base;
+        outFile.put(sib);
+    }
+};
+
+
+
 enum class instr_reloc : ubyte {
     NONE,
     DISP,
@@ -68,9 +96,9 @@ public:
     ubyte opcode[3] = {};
     ubyte primaryOpcodeIndex = 0;
 
-    ubyte modrm = 0;
+    Modrm modrm = {};
     bool modrmUsed = false;
-    ubyte sib = 0;
+    SIB sib = {};
     bool sibUsed = false;
 
     instr_reloc reloc = instr_reloc::NONE;
@@ -80,18 +108,19 @@ public:
 
     ubyte getPrefixCount() const {
         ubyte prefixI = 0;
-        for (; prefixes[prefixI] != 0; prefixI++);
+        while(prefixes[prefixI] != 0)
+            prefixI++;
         return prefixI;
     }
 
     void addPrefix(const ubyte prefix) {
-        if (prefix >= 0x40 && prefix < 0x50) {
+        if (prefix >= 0x40 && prefix < 0x50)
             rex |= prefix;
-        }
-        else {
-            ubyte prefixI = getPrefixCount();
-            prefixes[prefixI] = prefix;
-        }
+        else
+            prefixes[getPrefixCount()] = prefix;
+
+        if (getPrefixCount() + (bool)rex > 4)
+            CompilerError("Prefix overflow");
     }
 
     ubyte size() const {
@@ -102,7 +131,7 @@ public:
 
 
 
-enum Requirement {
+enum Requirement : ubyte {
     OPERAND = 1,  //needs operand size prefix
     ADDRESS = 2,  //needs address size prefix
     REXW = 3,     //needs REX.W prefix

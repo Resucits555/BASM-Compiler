@@ -12,46 +12,16 @@ static COFF_Relocation* currentReloc;
 static COFF_Relocation* relocEnd;
 
 
-static ubyte minBitsToStoreValue(uint64_t value, const bool negative) {
-    if (negative)
-        value = ~value << 1;
+static ubyte minBitsToStoreValue(uint64_t value, const bool isSigned) {
+    if (isSigned) {
+        if ((int64_t)value < 0)
+            value = ~value;
+        value = value << 1;
+    }
     if (value == 0)
         return 1;
 
     return floor(log2(value) + 1);
-}
-
-
-
-
-
-static std::optional<argument> getRegArgument(char* str) {
-    const ubyte strSize = 5;
-    ubyte argLen = strlen(str);
-    if (argLen >= strSize)
-        return std::nullopt;
-
-    char regStr[strSize];
-    for (ubyte chr = 0; str[chr] != NULL; chr++)
-        regStr[chr] = std::tolower(str[chr]);
-
-    static const char registers[][strSize] = {
-    "al", "cl", "dl", "bl", "ah", "ch", "dh", "bh", "r8l", "r9l", "r10l", "r11l", "r12l", "r13l", "r14l", "r15l",
-    "ax", "cx", "dx", "bx", "sp", "bp", "si", "di", "r8w", "r9w", "r10w", "r11w", "r12w", "r13w", "r14w", "r15w",
-    "eax", "ecx", "edx", "ebx", "esp", "ebp", "esi", "edi", "r8d", "r9d", "r10d", "r11d", "r12d", "r13d", "r14d", "r15d",
-    "rax", "rcx", "rdx", "rbx", "rsp", "rbp", "rsi", "rdi", "r8", "r9", "r10", "r11", "r12", "r13", "r14", "r15",
-    /*"spl", "bpl", "sil", "dil"
-    "xmm0", "xmm1", "xmm2", "xmm3", "xmm4", "xmm5", "xmm6", "xmm7", "xmm8", "xmm9", "xmm10", "xmm11", "xmm12", "xmm13", "xmm14", "xmm15",
-    "ymm0", "ymm1", "ymm2", "ymm3", "ymm4", "ymm5", "ymm6", "ymm7", "ymm8", "ymm9", "ymm10", "ymm11", "ymm12", "ymm13", "ymm14", "ymm15",
-    "st0", "st1", "st2", "st3", "st4", "st5", "st6", "st7",
-    "mmx0", "mmx1", "mmx2", "mmx3", "mmx4", "mmx5", "mmx6", "mmx7"*/
-    };
-    std::optional<ubyte> reg = findStringInArray(str, *registers, std::size(registers), strSize);
-    if (!reg.has_value())
-        return std::nullopt;
-
-    argument arg = { (ubyte)(*reg % 16), (ubyte)(pow(2, *reg >> 4) * 8), false, REG };
-    return arg;
 }
 
 
@@ -110,7 +80,7 @@ inline static pugi::xml_document OpenReference() {
 
 
 
-inline static COFF_Relocation* CreateReloc(SymbolData* const symtab, const SymbolData* symtabEnd) {
+inline static COFF_Relocation* CreateReloc(const SymtabArea& symtab) {
     ErrorData errorData = {};
     srcFile.seekg(0);
     char inputLine[maxLineSize];
@@ -126,7 +96,7 @@ inline static COFF_Relocation* CreateReloc(SymbolData* const symtab, const Symbo
         if (char* comment = strchr(inputLine, ';'))
             *comment = NULL;
 
-        for (SymbolData* symbol = symtab; symbol < symtabEnd; symbol++) {
+        for (SymbolData* symbol = symtab.ptr; symbol < symtab.end; symbol++) {
             char symName[maxLineSize];
             std::ios::iostate state = srcFile.rdstate();
             const fpos_t ret = srcFile.tellg();
@@ -151,7 +121,84 @@ inline static COFF_Relocation* CreateReloc(SymbolData* const symtab, const Symbo
 
 
 
-inline static void GetArguments(argument* args, SymbolData* symtab, const SymbolData* symtabEnd, const fpos_t textPos) {
+static std::optional<argument> getRegArgument(char* argstr) {
+    const ubyte strSize = 5;
+
+    ubyte argLen = strlen(argstr);
+    if (argLen >= strSize)
+        return std::nullopt;
+
+    char regStr[strSize] = "";
+    for (ubyte chr = 0; chr < argLen; chr++)
+        regStr[chr] = std::tolower(argstr[chr]);
+
+    static const char registers[][strSize] = {
+    "al", "cl", "dl", "bl", "ah", "ch", "dh", "bh", "r8l", "r9l", "r10l", "r11l", "r12l", "r13l", "r14l", "r15l",
+    "ax", "cx", "dx", "bx", "sp", "bp", "si", "di", "r8w", "r9w", "r10w", "r11w", "r12w", "r13w", "r14w", "r15w",
+    "eax", "ecx", "edx", "ebx", "esp", "ebp", "esi", "edi", "r8d", "r9d", "r10d", "r11d", "r12d", "r13d", "r14d", "r15d",
+    "rax", "rcx", "rdx", "rbx", "rsp", "rbp", "rsi", "rdi", "r8", "r9", "r10", "r11", "r12", "r13", "r14", "r15",
+    /*"spl", "bpl", "sil", "dil"
+    "xmm0", "xmm1", "xmm2", "xmm3", "xmm4", "xmm5", "xmm6", "xmm7", "xmm8", "xmm9", "xmm10", "xmm11", "xmm12", "xmm13", "xmm14", "xmm15",
+    "ymm0", "ymm1", "ymm2", "ymm3", "ymm4", "ymm5", "ymm6", "ymm7", "ymm8", "ymm9", "ymm10", "ymm11", "ymm12", "ymm13", "ymm14", "ymm15",
+    "st0", "st1", "st2", "st3", "st4", "st5", "st6", "st7",
+    "mmx0", "mmx1", "mmx2", "mmx3", "mmx4", "mmx5", "mmx6", "mmx7"*/
+    };
+    std::optional<ubyte> reg = findStringInArray(argstr, *registers, std::size(registers), strSize);
+    if (!reg.has_value())
+        return std::nullopt;
+
+    argument arg = { (ubyte)(*reg % 16), (ubyte)(pow(2, *reg >> 4) * 8), false, REG };
+    return arg;
+}
+
+
+
+
+
+inline static void ProcessSymbolArg(char* argstr, argument& arg, const SymtabArea& symtab) {
+    char* symName;
+    if (char* bracket = strchr(argstr, '[')) {
+        arg.addr = MEM;
+        *bracket = NULL;
+        arg.size = (int)getSymbolBytes(argstr, errorData) * 8;
+        symName = bracket + 1;
+    }
+    else {
+        arg.addr = IMM;
+        symName = argstr;
+    }
+
+    if (currentReloc > relocEnd)
+        CompilerError(errorData, "Relocs don't fit into .reloc");
+
+    if (strncmp(symName, "rel", 3) == 0) {
+        symName += 4;
+        if (char* closeBracket = strchr(symName, ']'))
+            *closeBracket = NULL;
+
+        SymbolData* symbol = findSymbol(symName, symtab, errorData);
+        currentReloc->symbolTableIndex = symbol - symtab.ptr + requiredSymbolSpace;
+        currentReloc->type = amd_reloc_type::REL32;
+        arg.relation = RELADDR;
+
+        (void)strtok(nullptr, instrDelimiters);
+    }
+    else {
+        if (char* closeBracket = strchr(symName, ']'))
+            *closeBracket = NULL;
+        currentReloc->symbolTableIndex = findSymbol(symName, symtab, errorData) - symtab.ptr + requiredSymbolSpace;
+        currentReloc->type = amd_reloc_type::ADDR64;
+
+        arg.relation = ABSADDR;
+    }
+
+    currentReloc++;
+}
+
+
+
+
+inline static void GetArguments(argument* args, const SymtabArea& symtab, const fpos_t textPos) {
     for (sbyte i = 0; i <= 2; i++) {
         char* argstr = strtok(nullptr, instrDelimiters);
         if (argstr == nullptr)
@@ -168,48 +215,10 @@ inline static void GetArguments(argument* args, SymbolData* symtab, const Symbol
         }
         else {
             std::optional<argument> regArg = getRegArgument(argstr);
-            if (regArg.has_value()) {
+            if (regArg.has_value())
                 arg = regArg.value();
-            }
-            else {
-                char* symName;
-                if (char* bracket = strchr(argstr, '[')) {
-                    arg.addr = MEM;
-                    *bracket = NULL;
-                    arg.size = (int)getSymbolBytes(argstr, errorData) * 8;
-                    symName = bracket + 1;
-                }
-                else {
-                    arg.addr = IMM;
-                    symName = argstr;
-                }
-
-                if (currentReloc > relocEnd)
-                    CompilerError(errorData, "Relocs don't fit into .reloc");
-
-                if (strncmp(symName, "rel", 3) == 0) {
-                    symName += 4;
-                    if (char* closeBracket = strchr(symName, ']'))
-                        *closeBracket = NULL;
-
-                    SymbolData* symbol = findSymbol(symName, symtab, symtabEnd, errorData);
-                    currentReloc->symbolTableIndex = symbol - symtab + requiredSymbolSpace;
-                    currentReloc->type = amd_reloc_type::REL32;
-                    arg.relation = RELADDR;
-
-                    (void)strtok(nullptr, instrDelimiters);
-                }
-                else {
-                    if (char* closeBracket = strchr(symName, ']'))
-                        *closeBracket = NULL;
-                    currentReloc->symbolTableIndex = findSymbol(symName, symtab, symtabEnd, errorData) - symtab + requiredSymbolSpace;
-                    currentReloc->type = amd_reloc_type::ADDR64;
-
-                    arg.relation = ABSADDR;
-                }
-
-                currentReloc++;
-            }
+            else
+                ProcessSymbolArg(argstr, arg, symtab);
         }
     }
 
@@ -303,14 +312,12 @@ inline static std::optional<instruction> IsFittingInstruction(const pugi::xml_no
     ubyte textArgCounter = 0;
     for (;textArgCounter < 2 && args[textArgCounter].addr != NULL; textArgCounter++);
 
-    instr.modrm = 0b11000000;
-
 
     if (pugi::xml_node mandatoryPref = syntax.parent().child("pref"))
         instr.addPrefix(std::stoi(mandatoryPref.child_value(), nullptr, 16));
     if (pugi::xml_node opcd_ext = syntax.parent().child("opcd_ext")) {
         instr.modrmUsed = true;
-        instr.modrm |= std::stoi(opcd_ext.child_value()) << 3;
+        instr.modrm.reg |= std::stoi(opcd_ext.child_value());
     }
 
 
@@ -344,7 +351,7 @@ inline static std::optional<instruction> IsFittingInstruction(const pugi::xml_no
         switch (textArg.addr) {
         case REG:
         {
-            bool extension = 0;
+            bool extension = false;
             if (textArg.val >= 8)
                 extension = true;
 
@@ -355,12 +362,12 @@ inline static std::optional<instruction> IsFittingInstruction(const pugi::xml_no
             case 'H':
             case 'R':
                 instr.modrmUsed = true;
-                instr.modrm |= textArg.val - (8 * extension);
+                instr.modrm.rm |= textArg.val - (8 * extension);
                 instr.rex |= REX.B * extension;
                 break;
             case 'G':
                 instr.modrmUsed = true;
-                instr.modrm |= textArg.val - (8 * extension) << 3;
+                instr.modrm.reg |= textArg.val - (8 * extension);
                 instr.rex |= REX.R * extension;
                 break;
             case 'Z':
@@ -390,7 +397,6 @@ inline static std::optional<instruction> IsFittingInstruction(const pugi::xml_no
             }
             break;
         case MEM:
-            instr.modrm &= 0b00111111;
             switch (textArg.relation) {
             //case NORELATION:   TODO: Take register as address
             case ABSADDR:
@@ -402,7 +408,9 @@ inline static std::optional<instruction> IsFittingInstruction(const pugi::xml_no
             case RELADDR:
                 if (*addressing != 'E' && *addressing != 'M')
                     return std::nullopt;
-                instr.modrm |= 0b101;
+                instr.modrmUsed = true;
+                instr.modrm.mod = 0;
+                instr.modrm.rm |= 0b101;
                 instr.dispSize = 4;
                 instr.reloc = (instr_reloc)((int)instr.reloc | (int)instr_reloc::DISP);
             }
@@ -477,9 +485,9 @@ inline static void WriteToExe(std::ofstream& outFile, instruction instr, const f
     outFile.write((char*)&instr.opcode, instr.primaryOpcodeIndex + 1);
 
     if (instr.modrmUsed)
-        outFile.put(instr.modrm);
+        instr.modrm.write(outFile);
     if (instr.sibUsed)
-        outFile.put(instr.sib);
+        instr.sib.write(outFile);
 
     if (instr.reloc == instr_reloc::BOTH)
         currentReloc[-2].virtualAddress = outFile.tellp() - textPos;
@@ -497,13 +505,13 @@ inline static void WriteToExe(std::ofstream& outFile, instruction instr, const f
 
 
 
-inline void CompileSource(SectionHeader* sections, SymbolData* const symtab, const SymbolData* symtabEnd) {
+inline void CompileSource(SectionHeader* sections, const SymtabArea& symtab) {
     pugi::xml_document x86reference = OpenReference();
     pugi::xml_node one_byte = x86reference.first_child().first_child();
 
     const fpos_t textPos = sections[TEXT].pointerToRawData;
 
-    COFF_Relocation* reloc = CreateReloc(symtab, symtabEnd);
+    COFF_Relocation* reloc = CreateReloc(symtab);
 
     errorData = {};
     srcFile.seekg(0);
@@ -549,11 +557,11 @@ inline void CompileSource(SectionHeader* sections, SymbolData* const symtab, con
                     Warning(errorData, "New function declared before returning previous. This could lead to undefined behaviour");
 
                 (void)strtok(formattedLine, instrDelimiters);
-                currentFunction = findSymbol(strtok(nullptr, " :"), symtab, symtabEnd, errorData);
+                currentFunction = findSymbol(strtok(nullptr, " :"), symtab, errorData);
                 currentFunction->value = (int)outFile.tellp() - textPos;
             }
             else {
-                findSymbol(strtok(formattedLine, " :"), symtab, symtabEnd, errorData)->value = outFile.tellp() - textPos;
+                findSymbol(strtok(formattedLine, " :"), symtab, errorData)->value = outFile.tellp() - textPos;
             }
             continue;
         }
@@ -564,7 +572,7 @@ inline void CompileSource(SectionHeader* sections, SymbolData* const symtab, con
 
         instruction instr;
         argument args[2];
-        GetArguments(args, symtab, symtabEnd, textPos);
+        GetArguments(args, symtab, textPos);
 
         instr = FindInstruction(firstToken, args, one_byte);
 

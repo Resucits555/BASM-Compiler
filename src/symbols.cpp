@@ -158,12 +158,13 @@ inline static ulong InitializeSymbol(SymbolData* symbol, const char* nameEnd, Er
 
 
 
-inline SymbolData* FindSymbols(const SymbolScopeCount& symbolCount, SectionHeader* sections) {
-    SymbolData* symtab = (SymbolData*)calloc((size_t)symbolCount.sum(), sizeof(SymbolData));
-    if (symtab == nullptr)
+inline SymtabArea FindSymbols(const SymbolScopeCount& symbolCount, SectionHeader* sections) {
+    SymtabArea symtab;
+    symtab.ptr = (SymbolData*)calloc((size_t)symbolCount.sum(), sizeof(SymbolData));
+    if (symtab.ptr == nullptr)
         Error("\"calloc\" function failed");
-    const SymbolData* const symtabEnd = symbolCount.getReducedSymtabEnd(symtab);
-    SymbolData* symbol = (SymbolData*)symtab;
+    symtab.end = symtab.ptr + symbolCount.getReducedSymtabSize();
+    SymbolData* symbol = symtab.ptr;
 
 
     ErrorData errorData;
@@ -261,7 +262,7 @@ inline SymbolData* FindSymbols(const SymbolScopeCount& symbolCount, SectionHeade
         if (symbol->isDefinedFunction()) {
             if (prevAux != nullptr) {
                 const ushort fileSymbol = 2;
-                prevAux->PointerToNextFunction = symbol - symtab + fileSymbol;
+                prevAux->PointerToNextFunction = symbol - symtab.ptr + fileSymbol;
             }
             prevAux = (AuxiliaryFunctionDefinition*)symbol + 1;
             symbol++;
@@ -269,7 +270,7 @@ inline SymbolData* FindSymbols(const SymbolScopeCount& symbolCount, SectionHeade
 
         nextSymbol:
         symbol++;
-        if (symbol > symtabEnd)
+        if (symbol > symtab.end)
             CompilerError(errorData, "Symbols don't fit into symtab");
     } while (!srcFile.eof());
 
@@ -286,13 +287,11 @@ union SymPointer {
     COFF_Symbol* coff;
 };
 
-inline static void ConvertSymbols(SymbolData* const symtab, const SymbolScopeCount symbolCount, const fpos_t strtabPos, SectionHeader* sections) {
-    const SymbolData* const symtabEnd = symbolCount.getReducedSymtabEnd(symtab);
-
+inline static void ConvertSymbols(const SymtabArea& symtab, const fpos_t strtabPos, SectionHeader* sections) {
     char name[maxLineSize] = "";
 
     SymPointer sym;
-    for (sym.data = symtab; sym.data < symtabEnd; sym.data++) {
+    for (sym.data = symtab.ptr; sym.data < symtab.end; sym.data++) {
         sym.data->getName(name);
 
         if (sym.data->nameLen > 8) {
@@ -335,7 +334,7 @@ inline static void ConvertSymbols(SymbolData* const symtab, const SymbolScopeCou
 
 
 
-inline void WriteSymbolTable(const fs::path srcPath, SectionHeader* sections, SymbolData* const symtab, const SymbolScopeCount& symbolCount) {
+inline void WriteSymbolTable(const fs::path srcPath, SectionHeader* sections, const SymtabArea& symtab, const SymbolScopeCount& symbolCount) {
     const ushort strtabSizeVar = sizeof(uint32_t);
     const fpos_t strtabFirst = (fpos_t)outFile.tellp() + sizeof(COFF_Symbol) * (symbolCount.sum() + requiredSymbolSpace) + strtabSizeVar;
 
@@ -365,10 +364,10 @@ inline void WriteSymbolTable(const fs::path srcPath, SectionHeader* sections, Sy
     }
 
 
-    ConvertSymbols(symtab, symbolCount, strtabFirst - strtabSizeVar, sections);
+    ConvertSymbols(symtab, strtabFirst - strtabSizeVar, sections);
     const ulong strtabSize = outFile.tellp() - strtabFirst + (fpos_t)strtabSizeVar;
     outFile.seekp(nextSymbol);
-    outFile.write((char*)symtab, (symbolCount.sum() - 2 * symbolCount.sectionSymCount) * sizeof(COFF_Symbol));
+    outFile.write((char*)symtab.ptr, (symbolCount.sum() - 2 * symbolCount.sectionSymCount) * sizeof(COFF_Symbol));
 
 
     for (ubyte sectionI = 1; sectionI < std::size(sectionNames); sectionI++) {

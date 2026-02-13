@@ -1,11 +1,6 @@
 # Introduction
 
-This is a personal project for an assembler. It's syntax is similar to Intel's with a few added functions.
-It has no third party libraries apart from pugixml used for reading the opcode reference,
-which is planned to be removed and replaced by a self-made file reader made specifically for the opcode reference
-to make the program smaller and completely independent (except for the opcode reference itself which would be dumb to rewrite).<br>
-
-The compiler is not finished and therefore does not create correctly compiled objects yet.
+This is a personal project for an assembler. It's syntax is similar to Intel's with a few added functions.<br>
 All the functions described below may not work on the current version.
 
 
@@ -21,7 +16,9 @@ basm \<command> [\<options>] [\<file> \<file>...]
 1. help / -help / --help<br>
    Displays help message
 2. compile<br>
-   Compile all following files
+   Compile all following files<br>
+
+There are no options implemented yet.
 
 
 
@@ -35,10 +32,10 @@ you will have to use a third party linker. Any linker should work.
 # Syntax
 
 Sections are marked with the "section" keyword, followed by it's name: ".text", ".data", ".bss".
-Section marks must be at the start of the line with no indentation allowed.
-Multiple sections of the same type are not allowed, e.g. having two .text sections in one file.
+Section declarations must be at the start of the line with no indentation allowed.
+Multiple sections of the same type are not allowed, like having two .text sections in one file.
 
-There are three keywords that define the scope of a variable or function declaration:<br>
+There are three keywords that define the scope of a variable or function:<br>
 A "static" symbol is inaccessible to the files this file gets linked to.<br>
 A "global" symbol is accessible to other files, it is therefore exported.<br>
 An "extern" symbol is imported from another file.<br>
@@ -103,5 +100,3 @@ and it can also have children marked with another dot: "..loop".<br>
 This follows simple hierarchy rules seen in many other projects.<br>
 
 Every relative address has to be marked with the "rel" keyword, like in function calls and jumps.<br>
-Also relative addresses cannot be used in any way until passing it in the code.
-Jumps forward are therefore not possible.
