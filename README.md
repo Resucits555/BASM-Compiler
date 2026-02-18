@@ -18,7 +18,8 @@ basm \<command> [\<options>] [\<file> \<file>...]
 2. compile<br>
    Compile all following files<br>
 
-There are no options implemented yet.
+There are no options implemented yet.<br>
+The compiler currently supports only win64 format.
 
 
 
@@ -31,7 +32,7 @@ you will have to use a third party linker. Any linker should work.
 
 # Syntax
 
-Sections are marked with the "section" keyword, followed by it's name: ".text", ".data", ".bss".
+Sections are marked with the "section" keyword, followed by it's name: ".text", ".data", ".bss".<br>
 Section declarations must be at the start of the line with no indentation allowed.
 Multiple sections of the same type are not allowed, like having two .text sections in one file.
 
@@ -53,10 +54,10 @@ More types could be added.
 
 
 
-### initialized data sections
+### Initialized data sections
 
-These sections contain initialized modifiable data.
-The syntax in these sections looks like this:<br>
+These sections contain initialized data.
+The syntax looks like this:<br>
 [global] \<size> \<name> = \<value><br>
 
 Variables in this section have to be initialized.<br>
@@ -80,12 +81,8 @@ Extern variables must not be initialized.
 ## .text section
 
 This section contains executable code.
-The syntax is derived from Intel's syntax, but has a few added functions:<br>
+The syntax is derived from Intel's syntax:<br>
 [\<prefix>...] \<mnemonic> [\<arg> \<arg>...] [; \<comment>]<br>
-
-Apart from the standard arguments seen in Intel's syntax,
-basm also supports an array access shortcut from the C language: "pointer[index]".<br><br>
-
 
 Functions are declared similarly to variables, followed by the definition:<br>
 static/global \<name>:<br>

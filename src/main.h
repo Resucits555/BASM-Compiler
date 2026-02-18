@@ -5,6 +5,7 @@
 #include <iostream>
 #include <fstream>
 #include <optional>
+#include <cstdint>
 
 
 typedef std::uint_fast8_t ubyte;
@@ -14,12 +15,7 @@ typedef std::uint_fast32_t ulong;
 
 namespace fs = std::filesystem;
 
-#if defined(_MSC_VER)
-#  define NORETURN __declspec(noreturn)
-#else
-#  define NORETURN [[noreturn]]
-#endif
-
+#define NORETURN __declspec(noreturn)
 
 
 
@@ -107,7 +103,6 @@ enum class amd_reloc_type : uint16_t
     PAIR = 0xf,
     SSPAN32 = 0x10
 };
-
 
 
 
@@ -228,8 +223,6 @@ struct SymbolScopeCount {
 
 
 
-
-//Visual studio can't detect that these functions are noreturn, so it throws warnings
 extern void Warning(const ErrorData errorData, const char* message);
 extern NORETURN void Error(const char* message);
 extern NORETURN void Error(const char* path, const char* message);

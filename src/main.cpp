@@ -148,7 +148,7 @@ inline static ubyte GetCommand(const ubyte argc, char** argv) {
 
 
 
-int main(const ubyte argc, char* argv[]) {
+int main(const int argc, char* argv[]) {
     ubyte commandI = GetCommand(argc, argv);
 
     switch (commandI) {

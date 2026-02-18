@@ -1,4 +1,5 @@
 #include <regex>
+#include <cmath>
 
 #include "main.h"
 #include "symbols.h"
@@ -28,7 +29,7 @@ SizeType getSymbolBytes(const char* str, ErrorData errorData) {
     if (!typeI.has_value())
         Error(errorData, "Invalid variable type. Note that memory access needs a type");
 
-    return (SizeType)pow(2, *typeI);
+    return (SizeType)std::pow(2, *typeI);
 }
 
 

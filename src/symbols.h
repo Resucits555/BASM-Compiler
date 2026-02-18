@@ -1,9 +1,6 @@
 #pragma once
 
 
-
-
-
 enum class symbol_type : uint16_t {
     IMAGE_SYM_TYPE_NULL = 0x0,
     IMAGE_SYM_TYPE_VOID = 0x1,

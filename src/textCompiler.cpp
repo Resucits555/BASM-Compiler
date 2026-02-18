@@ -12,7 +12,7 @@ static COFF_Relocation* currentReloc;
 static COFF_Relocation* relocEnd;
 
 
-static ubyte minBitsToStoreValue(uint64_t value, const bool isSigned) {
+static ubyte minBitsToStore(uint64_t value, const bool isSigned) {
     if (isSigned) {
         if ((int64_t)value < 0)
             value = ~value;
@@ -22,6 +22,40 @@ static ubyte minBitsToStoreValue(uint64_t value, const bool isSigned) {
         return 1;
 
     return floor(log2(value) + 1);
+}
+
+
+
+
+
+static std::optional<Argument> getRegArgument(char* argstr) {
+    const ubyte strSize = 5;
+
+    ubyte argLen = strlen(argstr);
+    if (argLen >= strSize)
+        return std::nullopt;
+
+    char regStr[strSize] = "";
+    for (ubyte chr = 0; chr < argLen; chr++)
+        regStr[chr] = std::tolower(argstr[chr]);
+
+    static const char registers[][strSize] = {
+    "al", "cl", "dl", "bl", "ah", "ch", "dh", "bh", "r8l", "r9l", "r10l", "r11l", "r12l", "r13l", "r14l", "r15l",
+    "ax", "cx", "dx", "bx", "sp", "bp", "si", "di", "r8w", "r9w", "r10w", "r11w", "r12w", "r13w", "r14w", "r15w",
+    "eax", "ecx", "edx", "ebx", "esp", "ebp", "esi", "edi", "r8d", "r9d", "r10d", "r11d", "r12d", "r13d", "r14d", "r15d",
+    "rax", "rcx", "rdx", "rbx", "rsp", "rbp", "rsi", "rdi", "r8", "r9", "r10", "r11", "r12", "r13", "r14", "r15",
+    /*"spl", "bpl", "sil", "dil"
+    "xmm0", "xmm1", "xmm2", "xmm3", "xmm4", "xmm5", "xmm6", "xmm7", "xmm8", "xmm9", "xmm10", "xmm11", "xmm12", "xmm13", "xmm14", "xmm15",
+    "ymm0", "ymm1", "ymm2", "ymm3", "ymm4", "ymm5", "ymm6", "ymm7", "ymm8", "ymm9", "ymm10", "ymm11", "ymm12", "ymm13", "ymm14", "ymm15",
+    "st0", "st1", "st2", "st3", "st4", "st5", "st6", "st7",
+    "mmx0", "mmx1", "mmx2", "mmx3", "mmx4", "mmx5", "mmx6", "mmx7"*/
+    };
+    std::optional<ubyte> reg = findStringInArray(argstr, *registers, std::size(registers), strSize);
+    if (!reg.has_value())
+        return std::nullopt;
+
+    Argument arg = { (ubyte)(*reg % 16), (ubyte)(pow(2, *reg >> 4) * 8), false, REG };
+    return arg;
 }
 
 
@@ -121,104 +155,206 @@ inline static COFF_Relocation* CreateReloc(const SymtabArea& symtab) {
 
 
 
-static std::optional<argument> getRegArgument(char* argstr) {
-    const ubyte strSize = 5;
+inline static void ProcessMemoryReference(char* argstr, Argument& arg, const SymtabArea& symtab, Instruction& instr) {
+    //disps, regs, constants are "vars"
+    char* vars[4] = { argstr };
+    //1 char padding
+    char opers[5] = {};
+    ubyte operI = 1;
 
-    ubyte argLen = strlen(argstr);
-    if (argLen >= strSize)
-        return std::nullopt;
+    bool searchingVariable = false;
+    for (; *argstr != ']'; argstr++) {
+        char& chr = *argstr;
 
-    char regStr[strSize] = "";
-    for (ubyte chr = 0; chr < argLen; chr++)
-        regStr[chr] = std::tolower(argstr[chr]);
+        if (strchr(" ()", chr)) {
+            chr = NULL;
+        }
+        else if (strchr("+-*", chr)) {
+            if (chr != ' ' && chr != NULL) {
+                opers[operI] = chr;
+                operI++;
+                searchingVariable = true;
 
-    static const char registers[][strSize] = {
-    "al", "cl", "dl", "bl", "ah", "ch", "dh", "bh", "r8l", "r9l", "r10l", "r11l", "r12l", "r13l", "r14l", "r15l",
-    "ax", "cx", "dx", "bx", "sp", "bp", "si", "di", "r8w", "r9w", "r10w", "r11w", "r12w", "r13w", "r14w", "r15w",
-    "eax", "ecx", "edx", "ebx", "esp", "ebp", "esi", "edi", "r8d", "r9d", "r10d", "r11d", "r12d", "r13d", "r14d", "r15d",
-    "rax", "rcx", "rdx", "rbx", "rsp", "rbp", "rsi", "rdi", "r8", "r9", "r10", "r11", "r12", "r13", "r14", "r15",
-    /*"spl", "bpl", "sil", "dil"
-    "xmm0", "xmm1", "xmm2", "xmm3", "xmm4", "xmm5", "xmm6", "xmm7", "xmm8", "xmm9", "xmm10", "xmm11", "xmm12", "xmm13", "xmm14", "xmm15",
-    "ymm0", "ymm1", "ymm2", "ymm3", "ymm4", "ymm5", "ymm6", "ymm7", "ymm8", "ymm9", "ymm10", "ymm11", "ymm12", "ymm13", "ymm14", "ymm15",
-    "st0", "st1", "st2", "st3", "st4", "st5", "st6", "st7",
-    "mmx0", "mmx1", "mmx2", "mmx3", "mmx4", "mmx5", "mmx6", "mmx7"*/
+                chr = NULL;
+            }
+        }
+        else if (searchingVariable) {
+            vars[operI - 1] = &chr;
+            searchingVariable = false;
+        }
+    }
+    *argstr = NULL;
+
+
+    ubyte varCombination = 0;
+
+    for (ubyte varI = 0; vars[varI] != nullptr && varI < std::size(vars); varI++) {
+        char*& var = vars[varI];
+
+        if (isdigit(*var) || *var == '-') {
+            unsigned long value = std::stoul(var, nullptr, 0);
+
+            //Checking operator to the left and right of variable
+            if (opers[varI] == '*' || opers[varI + 1] == '*') {
+                instr.sib.scale = log2f(value);
+            }
+            else {
+                instr.disp = value;
+                if (minBitsToStore(value, true) <= 8) {
+                    instr.dispSize = 1;
+                    varCombination |= DISP8;
+                }
+                else {
+                    instr.dispSize = 4;
+                    varCombination |= DISP32;
+                }
+            }
+        }
+        else {
+            std::optional<Argument> regArg = getRegArgument(var);
+            if (regArg.has_value()) {
+                if (regArg.value().size != 64)
+                    Error(errorData, "Only 8 bytes sized registers possible");
+
+                if (opers[varI] == '*' || opers[varI + 1] == '*') {
+                    instr.sib.index = regArg.value().val;
+                    varCombination |= INDEX;
+                }
+                else {
+                    if (varCombination & RMBASE) {
+                        //for when the user chooses to not include a scale
+                        instr.sib.index = regArg.value().val;
+                        varCombination |= INDEX;
+                    }
+                    else {
+                        //both rm and base are in modrm.rm
+                        //they get sorted out later
+                        instr.modrm.rm = regArg.value().val;
+                        varCombination |= RMBASE;
+                    }
+                }
+            }
+            else
+                Error(errorData, "Invalid register name");
+        }
+    }
+
+    if ((varCombination & (DISP8 | DISP32)) == (DISP8 | DISP32))
+        Error(errorData, "Two displacement values used");
+
+
+    const ubyte useSIB = 0b100;
+    static constexpr ubyte modValues[] = {
+        -1, 0,     -1,     useSIB, //no disp
+        -1, 1, useSIB, 1 + useSIB, //disp8
+        -1, 2, useSIB, 2 + useSIB  //disp32
     };
-    std::optional<ubyte> reg = findStringInArray(argstr, *registers, std::size(registers), strSize);
-    if (!reg.has_value())
-        return std::nullopt;
 
-    argument arg = { (ubyte)(*reg % 16), (ubyte)(pow(2, *reg >> 4) * 8), false, REG };
-    return arg;
+    const ubyte mod = modValues[varCombination];
+    if (mod == (ubyte)-1)
+        Error(errorData, "Reference configuration not possible");
+    instr.modrm.mod = mod & 0b11;
+
+    const ubyte SP = 0b100;
+    const ubyte BP = 0b101;
+
+    if (instr.modrm.rm == BP && instr.modrm.mod == 0) {
+        instr.modrm.mod = 1;
+        instr.dispSize = 1;
+    }
+
+    if (mod & useSIB) {
+        if (instr.sib.index == SP)
+            Error(errorData, "SP cannot be index");
+        instr.sibUsed = true;
+        instr.sib.base = instr.modrm.rm;
+        instr.modrm.rm = SP;
+
+        if (varCombination == (INDEX | DISP8) || varCombination == (INDEX | DISP32)) {
+            instr.sib.base = BP;
+            instr.dispSize = 4;
+        }
+    }
+    else {
+        if (instr.modrm.rm == SP) {
+            instr.sibUsed = true;
+            instr.sib.base = SP;
+            instr.sib.index = SP;
+        }
+    }
 }
 
 
 
-
-
-inline static void ProcessSymbolArg(char* argstr, argument& arg, const SymtabArea& symtab) {
-    char* symName;
+inline static void ProcessSpecialArg(char* argstr, Argument& arg, const SymtabArea& symtab, Instruction& instr) {
     if (char* bracket = strchr(argstr, '[')) {
-        arg.addr = MEM;
+        if (strchr(argstr, ']') == nullptr)
+            Error(errorData, "Closing square bracket is missing");
         *bracket = NULL;
+        arg.addr = MEM;
         arg.size = (int)getSymbolBytes(argstr, errorData) * 8;
-        symName = bracket + 1;
+        instr.modrmUsed = true;
+
+        argstr = bracket + 1;
+
+        if (strncmp(argstr, "rel", 3) == 0) {
+            arg.relation = RELADDR;
+        }
+        else {
+            arg.argDefined = true;
+            ProcessMemoryReference(argstr, arg, symtab, instr);
+            return;
+        }
     }
     else {
         arg.addr = IMM;
-        symName = argstr;
     }
+
 
     if (currentReloc > relocEnd)
         CompilerError(errorData, "Relocs don't fit into .reloc");
 
-    if (strncmp(symName, "rel", 3) == 0) {
-        symName += 4;
-        if (char* closeBracket = strchr(symName, ']'))
-            *closeBracket = NULL;
-
-        SymbolData* symbol = findSymbol(symName, symtab, errorData);
-        currentReloc->symbolTableIndex = symbol - symtab.ptr + requiredSymbolSpace;
+    if (strncmp(argstr, "rel", 3) == 0) {
+        argstr += 4;
         currentReloc->type = amd_reloc_type::REL32;
         arg.relation = RELADDR;
-
-        (void)strtok(nullptr, instrDelimiters);
     }
     else {
-        if (char* closeBracket = strchr(symName, ']'))
-            *closeBracket = NULL;
-        currentReloc->symbolTableIndex = findSymbol(symName, symtab, errorData) - symtab.ptr + requiredSymbolSpace;
         currentReloc->type = amd_reloc_type::ADDR64;
-
         arg.relation = ABSADDR;
     }
 
+    if (char* closingBracket = strchr(argstr, ']'))
+        *closingBracket = NULL;
+
+    currentReloc->symbolTableIndex = findSymbol(argstr, symtab, errorData) - symtab.ptr + requiredSymbolSpace;
     currentReloc++;
 }
 
 
 
 
-inline static void GetArguments(argument* args, const SymtabArea& symtab, const fpos_t textPos) {
+inline static void GetArguments(Argument* args, const SymtabArea& symtab, const fpos_t textPos, Instruction& instr) {
     for (sbyte i = 0; i <= 2; i++) {
-        char* argstr = strtok(nullptr, instrDelimiters);
+        char* argstr = strtok(nullptr, ",");
         if (argstr == nullptr)
             return;
+        while (*argstr == ' ')
+            argstr++;
 
-        argument& arg = args[i];
+        Argument& arg = args[i];
         if (isdigit(*argstr) || *argstr == '-') {
             arg.addr = IMM;
-            if (*argstr == '-')
-                arg.negative = true;
             arg.mutableSize = true;
             arg.val = std::stoull(argstr, nullptr, 0);
-            arg.size = minBitsToStoreValue(arg.val, arg.negative);
+            arg.size = minBitsToStore(arg.val, *argstr == '-');
         }
         else {
-            std::optional<argument> regArg = getRegArgument(argstr);
+            std::optional<Argument> regArg = getRegArgument(argstr);
             if (regArg.has_value())
                 arg = regArg.value();
             else
-                ProcessSymbolArg(argstr, arg, symtab);
+                ProcessSpecialArg(argstr, arg, symtab, instr);
         }
     }
 
@@ -229,7 +365,7 @@ inline static void GetArguments(argument* args, const SymtabArea& symtab, const 
 
 
 
-inline static bool IsCorrectType(argument& textArg, pugi::xml_node argNode, instruction& instr, Requirement& prevReq) {
+inline static bool IsCorrectType(Argument& textArg, pugi::xml_node argNode, Instruction& instr, Requirement& prevReq) {
     char type[4];
     strcpy(type, argNode.first_child().next_sibling().child_value());
 
@@ -277,7 +413,7 @@ inline static bool IsCorrectType(argument& textArg, pugi::xml_node argNode, inst
             }
         }
 
-        const ubyte prefixValues[] = { 0, operandSizePrefix, addressSizePrefix, REX.W };
+        const unsigned char prefixValues[] = { 0, operandSizePrefix, addressSizePrefix, REX.W };
         if (!memchr(instr.prefixes, req, std::size(instr.prefixes)))
             instr.addPrefix(prefixValues[req]);
     }
@@ -298,8 +434,9 @@ inline static bool IsCorrectType(argument& textArg, pugi::xml_node argNode, inst
 
 
 //Returns instruction data if it has fitting arguments etc., otherwise returns nullopt
-inline static std::optional<instruction> IsFittingInstruction(const pugi::xml_node pri_opcd, const pugi::xml_node syntax, argument* args) {
-    instruction instr{};
+inline static std::optional<Instruction> IsFittingInstruction(const Instruction& predefinedInstr, const pugi::xml_node pri_opcd, const pugi::xml_node syntax, Argument* args) {
+    Instruction instr = predefinedInstr;
+
     if (strcmp(pri_opcd.parent().name(), "two-byte") == 0) {
         instr.opcode[0] = 0x0F;
         instr.primaryOpcodeIndex++;
@@ -317,17 +454,15 @@ inline static std::optional<instruction> IsFittingInstruction(const pugi::xml_no
         instr.addPrefix(std::stoi(mandatoryPref.child_value(), nullptr, 16));
     if (pugi::xml_node opcd_ext = syntax.parent().child("opcd_ext")) {
         instr.modrmUsed = true;
-        instr.modrm.reg |= std::stoi(opcd_ext.child_value());
+        instr.modrm.reg = std::stoi(opcd_ext.child_value());
     }
 
 
     Requirement prevReq = (Requirement)0;
 
     ubyte entryArgCounter = 0;
-    for (pugi::xml_node argNode = syntax.first_child().next_sibling();
-        argNode.type() != pugi::node_null; argNode = argNode.next_sibling()) {
-
-        argument& textArg = args[entryArgCounter];
+    for (pugi::xml_node argNode = syntax.first_child().next_sibling(); argNode.type() != pugi::node_null; argNode = argNode.next_sibling()) {
+        Argument& textArg = args[entryArgCounter];
 
 
         char addressing[4];
@@ -335,7 +470,7 @@ inline static std::optional<instruction> IsFittingInstruction(const pugi::xml_no
             if (*argNode.child_value() == 'S')
                 continue;
             strcpy(addressing, argNode.child_value());
-            std::optional<argument> entryArg = getRegArgument(addressing);
+            std::optional<Argument> entryArg = getRegArgument(addressing);
             if (entryArg != textArg)
                 return std::nullopt;
 
@@ -345,15 +480,17 @@ inline static std::optional<instruction> IsFittingInstruction(const pugi::xml_no
 
         strcpy(addressing, argNode.first_child().child_value());
 
-        if (addressing[1] != NULL)
+        if (textArg.argDefined) {
+            if (*addressing != 'E')
+                return std::nullopt;
+            entryArgCounter++;
             continue;
+        }
 
         switch (textArg.addr) {
         case REG:
         {
-            bool extension = false;
-            if (textArg.val >= 8)
-                extension = true;
+            bool extension = textArg.val >= 8;
 
             switch (*addressing) {
             default:
@@ -362,12 +499,12 @@ inline static std::optional<instruction> IsFittingInstruction(const pugi::xml_no
             case 'H':
             case 'R':
                 instr.modrmUsed = true;
-                instr.modrm.rm |= textArg.val - (8 * extension);
+                instr.modrm.rm = textArg.val - (8 * extension);
                 instr.rex |= REX.B * extension;
                 break;
             case 'G':
                 instr.modrmUsed = true;
-                instr.modrm.reg |= textArg.val - (8 * extension);
+                instr.modrm.reg = textArg.val - (8 * extension);
                 instr.rex |= REX.R * extension;
                 break;
             case 'Z':
@@ -410,7 +547,7 @@ inline static std::optional<instruction> IsFittingInstruction(const pugi::xml_no
                     return std::nullopt;
                 instr.modrmUsed = true;
                 instr.modrm.mod = 0;
-                instr.modrm.rm |= 0b101;
+                instr.modrm.rm = 0b101;
                 instr.dispSize = 4;
                 instr.reloc = (instr_reloc)((int)instr.reloc | (int)instr_reloc::DISP);
             }
@@ -432,21 +569,20 @@ inline static std::optional<instruction> IsFittingInstruction(const pugi::xml_no
 
 
 
-inline static instruction FindInstruction(char* mnemonic, argument* args, const pugi::xml_node& one_byte) {
+inline static Instruction FindInstruction(const Instruction& predefinedInstr, char* mnemonic, Argument* args, const pugi::xml_node one_byte) {
     for (ubyte chr = 0; chr < strlen(mnemonic); chr++)
         mnemonic[chr] = std::toupper(mnemonic[chr]);
 
-    std::optional<instruction> bestInstrFound;
+    std::optional<Instruction> bestInstrFound;
     ubyte bestInstrSize = -1;
 
     for (auto pri_opcd = one_byte.first_child(); pri_opcd.type() != pugi::node_null; pri_opcd = pri_opcd.next_sibling()) {
         for (auto entry = pri_opcd.first_child(); entry.type() != pugi::node_null; entry = entry.next_sibling()) {
             for (auto syntax = entry.child("syntax"); strcmp(syntax.name(), "syntax") == 0; syntax = syntax.next_sibling()) {
-                if (strcmp(mnemonic, syntax.first_child().child_value()) != 0
-                    || (*entry.attribute("mode").value() != 'e' && *entry.next_sibling().attribute("mode").value() == 'e'))
+                if (strcmp(mnemonic, syntax.first_child().child_value()) != 0 || (*entry.attribute("mode").value() != 'e' && *entry.next_sibling().attribute("mode").value() == 'e'))
                     continue;
 
-                std::optional<instruction> newInstruction = IsFittingInstruction(pri_opcd, syntax, args);
+                std::optional<Instruction> newInstruction = IsFittingInstruction(predefinedInstr, pri_opcd, syntax, args);
                 if (!newInstruction.has_value())
                     continue;
 
@@ -477,7 +613,7 @@ inline static instruction FindInstruction(char* mnemonic, argument* args, const 
 
 
 
-inline static void WriteToExe(std::ofstream& outFile, instruction instr, const fpos_t textPos) {
+inline static void WriteToExe(std::ofstream& outFile, const Instruction instr, const fpos_t textPos) {
     outFile.write((char*)&instr.prefixes, instr.getPrefixCount());
     if (instr.rex)
         outFile.put(instr.rex);
@@ -493,8 +629,13 @@ inline static void WriteToExe(std::ofstream& outFile, instruction instr, const f
         currentReloc[-2].virtualAddress = outFile.tellp() - textPos;
     else if (instr.reloc == instr_reloc::DISP)
         currentReloc[-1].virtualAddress = outFile.tellp() - textPos;
-    const char nullstr[16] = "";
-    outFile.write(nullstr, instr.dispSize);
+    if (instr.disp != 0) {
+        outFile.write((char*)&instr.disp, instr.dispSize);
+    }
+    else {
+        static const char nullstr[16] = "";
+        outFile.write(nullstr, instr.dispSize);
+    }
 
     if ((int)instr.reloc & (int)instr_reloc::IMM)
         currentReloc[-1].virtualAddress = outFile.tellp() - textPos;
@@ -570,11 +711,11 @@ inline void CompileSource(SectionHeader* sections, const SymtabArea& symtab) {
         if (strncmp(firstToken, "extern", 7) == 0)
             continue;
 
-        instruction instr;
-        argument args[2];
-        GetArguments(args, symtab, textPos);
+        Instruction instr;
+        Argument args[2];
+        GetArguments(args, symtab, textPos, instr);
 
-        instr = FindInstruction(firstToken, args, one_byte);
+        instr = FindInstruction(instr, firstToken, args, one_byte);
 
         WriteToExe(outFile, instr, textPos);
 

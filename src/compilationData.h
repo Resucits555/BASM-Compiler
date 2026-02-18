@@ -12,9 +12,8 @@ const REX_t REX;
 
 
 
-
 enum addressing : ubyte {
-    NOARG,
+    NOADDR,
     REG,
     MEM,
     IMM
@@ -31,20 +30,20 @@ enum addressRelation : ubyte {
 
 
 
-struct argument {
+struct Argument {
     uint64_t val = 0;
     //Size of final variable. Like in [rax], this would represent the size of the referenced address
     ushort size = 0;
     bool mutableSize = false;
-    enum addressing addr = NOARG;
+    enum addressing addr = NOADDR;
     enum addressRelation relation = NORELATION;
-    bool negative = false;
+    bool argDefined = false;
 
-    friend bool operator!=(const argument& arg1, const argument& arg2) {
-        if (arg1.addr == arg2.addr && arg1.size == arg2.size && arg1.negative == arg2.negative && arg1.val == arg2.val)
-            return false;
-        else
+    friend bool operator==(const Argument& arg1, const Argument& arg2) {
+        if (arg1.addr == arg2.addr && arg1.size == arg2.size && arg1.val == arg2.val)
             return true;
+        else
+            return false;
     }
 };
 
@@ -56,7 +55,7 @@ struct Modrm {
     ubyte reg = 0;
     ubyte rm = 0;
 
-    void write(std::ofstream& outFile) const {
+    inline void write(std::ofstream& outFile) const {
         ubyte modrm;
         modrm = (mod << 6) | (reg << 3) | rm;
         outFile.put(modrm);
@@ -70,7 +69,7 @@ struct SIB {
     ubyte index = 0;
     ubyte base = 0;
 
-    void write(std::ofstream& outFile) const {
+    inline void write(std::ofstream& outFile) const {
         ubyte sib;
         sib = (scale << 6) | (index << 3) | base;
         outFile.put(sib);
@@ -88,7 +87,7 @@ enum class instr_reloc : ubyte {
 
 
 
-class instruction {
+class Instruction {
 public:
     ubyte prefixes[4] = {};
     ubyte rex = 0;
@@ -104,6 +103,7 @@ public:
     instr_reloc reloc = instr_reloc::NONE;
     ubyte dispSize = 0;
     ubyte immediateSize = 0;
+    uint32_t disp = 0;
     uint64_t immediate = 0;
 
     ubyte getPrefixCount() const {
@@ -126,6 +126,27 @@ public:
     ubyte size() const {
         return getPrefixCount() + (primaryOpcodeIndex + 1) + modrmUsed + sibUsed + dispSize + immediateSize;
     }
+};
+
+
+
+
+enum varType : ubyte {
+    NOVARTYPE,
+    RMBASE = 1,    //effectively same thing
+    INDEX = 2, //Includes scale
+    DISP8 = 4,
+    DISP32 = 8
+};
+
+
+
+
+struct modrmSibSetting {
+    ubyte mod;
+    ubyte index;
+    ubyte base;
+    ubyte dispSize;
 };
 
 
