@@ -1,13 +1,12 @@
 # Introduction
 
 This is a personal project for an assembler. It's syntax is similar to Intel's.<br>
-All the functions described below may not work on the current version.
 
 
 
 # Usage
 
-basm \<command> [\<options>] [\<file> \<file>...]
+basm \<command> [\<file>...]
 
 
 
@@ -18,15 +17,13 @@ basm \<command> [\<options>] [\<file> \<file>...]
 2. compile<br>
    Compile all following files<br>
 
-There are no options implemented yet.<br>
-
 
 
 ## Executable
 
 The compiler does not include a linker. This means that if you want to create an executable,
 you will have to use a third party linker. Any linker should work.<br>
-The compiler can only output win64 object format.
+The compiler only supports the win64 object format.
 
 
 
@@ -39,7 +36,7 @@ Multiple sections of the same type are not allowed, like having two .text sectio
 There are three keywords that define the scope of a variable or function:<br>
 A "static" symbol is inaccessible to the files this file gets linked to.<br>
 A "global" symbol is accessible to other files, it is therefore exported.<br>
-An "extern" symbol is imported from another file.<br>
+An "extern" symbol is defined in another file, it is therefore imported.<br>
 The keyword "static" is used exclusively for functions, variables must not have that keyword.<br>
 
 Note that spaces around '=' or after commas are required, unlike in other languages and compilers.
@@ -48,9 +45,8 @@ Note that spaces around '=' or after commas are required, unlike in other langua
 
 ## Variables
 
-There is one variable size family yet. The family consists of fixed size variables, they will have the exact size you choose:<br>
+There is only one variable type family. The family consists of fixed size variables, they will have the exact size you choose:<br>
 "byte" for 8 bits, "word" for 16 bits, "dword" for 32 bits, "qword" for 64 bits<br>
-More types could be added.
 
 
 
@@ -58,7 +54,7 @@ More types could be added.
 
 These sections contain initialized data.
 The syntax looks like this:<br>
-[global] \<size> \<name> = \<value><br>
+[global] \<type> \<name> = \<value><br>
 
 Variables in this section have to be initialized.<br>
 
@@ -72,9 +68,9 @@ they're taken as any other character in the string.
 
 This section contains uninitialized modifiable data.
 The syntax is similar to the .data section's syntax:<br>
-[extern] \<size> \<name><br>
+[extern] \<type> \<name>[\\[\<size>\\]]<br>
 
-Extern variables must not be initialized.
+Optionally, a size can be given in square brackets. That will give the variable "type * size" bytes of memory.
 
 
 
@@ -82,12 +78,13 @@ Extern variables must not be initialized.
 
 This section contains executable code.
 The syntax is derived from Intel's syntax:<br>
-[\<prefix>...] \<mnemonic> [\<arg> \<arg>...] [; \<comment>]<br>
+\<mnemonic> [\<arg> \<arg>...] [; \<comment>]<br>
 
 Functions are declared similarly to variables, followed by the definition:<br>
 static/global \<name>:<br>
 Names without a "global" or "static" keyword are interpreted as labels.<br>
 A function import is similar to a data import, but without a size:<br>
-extern \<name><br><br>
+extern \<name><br>
 
-Every relative address has to be marked with the "rel" keyword, like in function calls and jumps.<br>
+Every relative address has to be marked with the "rel" keyword,
+like in function calls and jumps, or memory access.<br>

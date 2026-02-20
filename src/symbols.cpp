@@ -6,11 +6,11 @@
 
 
 static bool isValidSymbol(const char* str, Section section) {
-    const char regexes[][45] = {
+    static const char regexes[][49] = {
     "[a-zA-Z]{6} [a-zA-Z_]\\w*:?\\s*",
     "",
     "",
-    "(extern )?[a-zA-Z]+ [a-zA-Z_]\\w*\\s*",
+    "(extern )?[a-zA-Z]+ [a-zA-Z_]\\w*\\s?(\\[\\d+\\])?\\s*",
     "(global )?[a-zA-Z]+ [a-zA-Z_]\\w* = \"?.*\"?\\s*",
     "(global )?[a-zA-Z]+ [a-zA-Z_]\\w* = \"?.*\"?\\s*" };
 
@@ -133,6 +133,7 @@ inline static ulong InitializeSymbol(SymbolData* symbol, const char* nameEnd, Er
 
     do {
         if (*init == '"') {
+            symbol->size = SizeType::NUL;
             const char* stringEnd = strrchr(init, '"') - 1;
             outFile.write(init + 1, stringEnd - init);
             dataSize += stringEnd - init;
@@ -244,7 +245,7 @@ inline SymtabArea FindSymbols(const SymbolScopeCount& symbolCount, SectionHeader
         }
 
 
-        name = strtok(nullptr, " :");
+        name = strtok(nullptr, " :[");
         symbol->nameRef = (srcFile.tellg() - srcFile.gcount()) + (name - formattedLine);
         symbol->nameLen = strlen(name) + terminatingNull;
 
@@ -253,6 +254,8 @@ inline SymtabArea FindSymbols(const SymbolScopeCount& symbolCount, SectionHeader
             ulong dataSize = (ulong)symbol->size;
             if (currentSection > BSS)
                 dataSize = InitializeSymbol(symbol, name + symbol->nameLen, errorData);
+            else if (char* size = strtok(nullptr, "]"))
+                dataSize *= std::stoul(size, nullptr, 0);
 
             symbol->value = sections[currentSection].sizeOfRawData;
             sections[currentSection].sizeOfRawData += dataSize;

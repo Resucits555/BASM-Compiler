@@ -1,5 +1,5 @@
 section .rdata
-	qword msg = "hello, world!"
+	byte msg = "hello, world!"
 
 
 section .text

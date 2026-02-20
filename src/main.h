@@ -145,7 +145,8 @@ enum class SizeType : uint16_t {
     FUNCTION,
     DWORD,
     LABEL,
-    QWORD = 8
+    QWORD = 8,
+    NUL
 };
 
 

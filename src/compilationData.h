@@ -156,6 +156,7 @@ enum Requirement : ubyte {
     OPERAND = 1,  //needs operand size prefix
     ADDRESS = 2,  //needs address size prefix
     REXW = 3,     //needs REX.W prefix
-    NOMODIF = 4,  //no size modifying allowed
-    DOUBLED = 8   //see 'a' operand type
+    NOMODIF = 4,  //no size prefixes allowed
+    NOREXW = 8,   //no REX.w prefix allowed
+    DOUBLED = 16  //see 'a' operand type
 };

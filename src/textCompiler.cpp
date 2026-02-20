@@ -140,8 +140,8 @@ inline static COFF_Relocation* CreateReloc(const SymtabArea& symtab) {
                 srcFile.seekg(ret);
 
             std::cmatch matchResult;
-            relocCount += std::regex_search(inputLine, matchResult, std::regex("\\W" + (std::string)symName + "\\W"))
-                && startOfLine + matchResult.position() != symbol->nameRef;
+            relocCount += std::regex_search(inputLine, matchResult, std::regex("\\W" + (std::string)symName + "\\b"))
+                && startOfLine + matchResult.position() + 1 != symbol->nameRef;
             symbol += symbol->isDefinedFunction();
         }
     } while (!srcFile.eof());
@@ -192,14 +192,17 @@ inline static void ProcessMemoryReference(char* argstr, Argument& arg, const Sym
         char*& var = vars[varI];
 
         if (isdigit(*var) || *var == '-') {
-            unsigned long value = std::stoul(var, nullptr, 0);
+            unsigned long value = std::stoll(var, nullptr, 0);
 
             //Checking operator to the left and right of variable
             if (opers[varI] == '*' || opers[varI + 1] == '*') {
                 instr.sib.scale = log2f(value);
             }
             else {
-                instr.disp = value;
+                if (opers[varI] == '+')
+                    instr.disp = value;
+                else instr.disp = -value;
+
                 if (minBitsToStore(value, true) <= 8) {
                     instr.dispSize = 1;
                     varCombination |= DISP8;
@@ -385,7 +388,7 @@ inline static bool IsCorrectType(Argument& textArg, pugi::xml_node argNode, Inst
     static const char _16[][strSize] = { "a", "v", "vds", "vq", "vqp", "vs", "w", "wi", "va", "wa", "wo", "ws" };
     static const ubyte _16req[std::size(_16)] = { OPERAND | DOUBLED, OPERAND, OPERAND, OPERAND, OPERAND, OPERAND, 0, 0, NOMODIF };
     static const char _32[][strSize] = { "a", "d", "di", "dqp", "ds", "p", "ptp", "sr", "v", "vds", "vqp", "vs", "va", "dqa", "da", "do" };
-    static const ubyte _32req[std::size(_32)] = { NOMODIF | DOUBLED, 0, 0, 0, 0, OPERAND, OPERAND, 0, NOMODIF, NOMODIF, NOMODIF, NOMODIF, ADDRESS };
+    static const ubyte _32req[std::size(_32)] = { NOMODIF | DOUBLED, 0, 0, 0, 0, OPERAND, OPERAND | NOREXW, 0, NOMODIF, NOMODIF, NOMODIF | NOREXW, NOMODIF, ADDRESS };
     static const char _64[][strSize] = { "dqp", "dr", "pi", "psq", "q", "qi", "qp", "vq", "vqp", "dqa", "qa", "qs"};
     static const ubyte _64req[std::size(_64)] = { REXW, 0, 0, 0, 0, 0, REXW, NOMODIF, REXW, ADDRESS };
 
@@ -424,7 +427,7 @@ inline static bool IsCorrectType(Argument& textArg, pugi::xml_node argNode, Inst
         if (!memchr(instr.prefixes, req, std::size(instr.prefixes)))
             instr.addPrefix(prefixValues[req]);
     }
-    else if (prevReq & 3 && req & NOMODIF) {
+    else if ((prevReq & 3 && prevReq != REXW && req & NOMODIF) || (prevReq & REXW && req & NOREXW)) {
         if (textArg.addr == IMM && arrayI < 3) {
             arrayI++;
             goto retry;
@@ -490,8 +493,7 @@ inline static std::optional<Instruction> IsFittingInstruction(const Instruction&
         if (textArg.argDefined) {
             if (*addressing != 'E')
                 return std::nullopt;
-            entryArgCounter++;
-            continue;
+            goto skipAddressing;
         }
 
         switch (textArg.addr) {
@@ -560,6 +562,7 @@ inline static std::optional<Instruction> IsFittingInstruction(const Instruction&
         }
 
 
+        skipAddressing:
         if (!IsCorrectType(textArg, argNode, instr, prevReq))
             return std::nullopt;
 
