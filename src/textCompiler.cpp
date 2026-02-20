@@ -28,7 +28,7 @@ static ubyte minBitsToStore(uint64_t value, const bool isSigned) {
 
 
 
-static std::optional<Argument> getRegArgument(char* argstr) {
+static std::optional<Argument> getRegArgument(const char* argstr) {
     const ubyte strSize = 5;
 
     ubyte argLen = strlen(argstr);
@@ -50,7 +50,7 @@ static std::optional<Argument> getRegArgument(char* argstr) {
     "st0", "st1", "st2", "st3", "st4", "st5", "st6", "st7",
     "mmx0", "mmx1", "mmx2", "mmx3", "mmx4", "mmx5", "mmx6", "mmx7"*/
     };
-    std::optional<ubyte> reg = findStringInArray(argstr, *registers, std::size(registers), strSize);
+    std::optional<ubyte> reg = findStringInArray(regStr, *registers, std::size(registers), strSize);
     if (!reg.has_value())
         return std::nullopt;
 
@@ -140,7 +140,7 @@ inline static COFF_Relocation* CreateReloc(const SymtabArea& symtab) {
                 srcFile.seekg(ret);
 
             std::cmatch matchResult;
-            relocCount += std::regex_search(inputLine, matchResult, std::regex("\\b" + (std::string)symName + "\\b"))
+            relocCount += std::regex_search(inputLine, matchResult, std::regex("\\W" + (std::string)symName + "\\W"))
                 && startOfLine + matchResult.position() != symbol->nameRef;
             symbol += symbol->isDefinedFunction();
         }
@@ -286,8 +286,11 @@ inline static void ProcessMemoryReference(char* argstr, Argument& arg, const Sym
 
 
 
-inline static void ProcessSpecialArg(char* argstr, Argument& arg, const SymtabArea& symtab, Instruction& instr) {
+inline static void ProcessSpecialArg(char* argstr, Argument& arg, const SymtabArea& symtab, Instruction& instr, char* const space) {
     if (char* bracket = strchr(argstr, '[')) {
+        if (space != nullptr)
+            *space = ' ';
+
         if (strchr(argstr, ']') == nullptr)
             Error(errorData, "Closing square bracket is missing");
         *bracket = NULL;
@@ -311,7 +314,7 @@ inline static void ProcessSpecialArg(char* argstr, Argument& arg, const SymtabAr
     }
 
 
-    if (currentReloc > relocEnd)
+    if (currentReloc >= relocEnd)
         CompilerError(errorData, "Relocs don't fit into .reloc");
 
     if (strncmp(argstr, "rel", 3) == 0) {
@@ -334,13 +337,17 @@ inline static void ProcessSpecialArg(char* argstr, Argument& arg, const SymtabAr
 
 
 
-inline static void GetArguments(Argument* args, const SymtabArea& symtab, const fpos_t textPos, Instruction& instr) {
+inline static void GetArguments(Argument* args, const SymtabArea& symtab, Instruction& instr) {
     for (sbyte i = 0; i <= 2; i++) {
         char* argstr = strtok(nullptr, ",");
         if (argstr == nullptr)
             return;
+
         while (*argstr == ' ')
             argstr++;
+        char* const space = strchr(argstr, ' ');
+        if (space != nullptr)
+            *space = NULL;
 
         Argument& arg = args[i];
         if (isdigit(*argstr) || *argstr == '-') {
@@ -354,7 +361,7 @@ inline static void GetArguments(Argument* args, const SymtabArea& symtab, const 
             if (regArg.has_value())
                 arg = regArg.value();
             else
-                ProcessSpecialArg(argstr, arg, symtab, instr);
+                ProcessSpecialArg(argstr, arg, symtab, instr, space);
         }
     }
 
@@ -535,7 +542,6 @@ inline static std::optional<Instruction> IsFittingInstruction(const Instruction&
             break;
         case MEM:
             switch (textArg.relation) {
-            //case NORELATION:   TODO: Take register as address
             case ABSADDR:
                 if (*addressing != 'A')
                     return std::nullopt;
@@ -713,7 +719,7 @@ inline void CompileSource(SectionHeader* sections, const SymtabArea& symtab) {
 
         Instruction instr;
         Argument args[2];
-        GetArguments(args, symtab, textPos, instr);
+        GetArguments(args, symtab, instr);
 
         instr = FindInstruction(instr, firstToken, args, one_byte);
 

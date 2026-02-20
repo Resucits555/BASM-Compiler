@@ -1,7 +1,3 @@
-section .bss
-	extern dword STD_OUTPUT_HANDLE
-
-
 section .rdata
 	qword msg = "hello, world!"
 

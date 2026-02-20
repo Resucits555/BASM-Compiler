@@ -223,7 +223,6 @@ inline SymtabArea FindSymbols(const SymbolScopeCount& symbolCount, SectionHeader
                 symbol->size = getSymbolBytes(firstToken, errorData);
             }
             else {
-                //TODO: Add parent names
                 symbol->size = SizeType::LABEL;
                 symbol->nameRef = (srcFile.tellg() - srcFile.gcount()) + (firstToken - formattedLine);
                 symbol->nameLen = strlen(firstToken) + terminatingNull;
@@ -283,19 +282,22 @@ inline SymtabArea FindSymbols(const SymbolScopeCount& symbolCount, SectionHeader
 
 
 union SymPointer {
-    char* chr;
     SymbolData* data;
     COFF_Symbol* coff;
 };
 
-inline static void ConvertSymbols(const SymtabArea& symtab, const fpos_t strtabPos, SectionHeader* sections) {
-    char name[maxLineSize] = "";
+
+inline static void ConvertSymbols(const SymtabArea& symtab, const fpos_t strtabPos) {
+    char funcName[2 * maxLineSize];
+    *funcName = NULL;
 
     SymPointer sym;
     for (sym.data = symtab.ptr; sym.data < symtab.end; sym.data++) {
+        char name[maxLineSize] = "";
         sym.data->getName(name);
 
-        if (sym.data->nameLen > 8) {
+        const bool usingStrtab = sym.data->nameLen > 8;
+        if (usingStrtab) {
             memset(sym.coff->name.shortName, 0, 8);
             sym.coff->name.longName.offset = (fpos_t)outFile.tellp() - strtabPos;
             outFile.write(name, sym.data->nameLen + terminatingNull);
@@ -303,6 +305,7 @@ inline static void ConvertSymbols(const SymtabArea& symtab, const fpos_t strtabP
         else {
             strncpy(sym.coff->name.shortName, name, 8);
         }
+
 
         sym.coff->numberOfAuxSymbols = 0;
 
@@ -322,10 +325,32 @@ inline static void ConvertSymbols(const SymtabArea& symtab, const fpos_t strtabP
                 sym.coff->numberOfAuxSymbols = 1;
                 sym.data++;
             }
+            strcpy(funcName, name);
             break;
         case SizeType::DWORD:
             sym.coff->type = symbol_type::IMAGE_SYM_TYPE_DWORD;
             break;
+        case SizeType::LABEL: {
+            sym.coff->type = symbol_type::IMAGE_SYM_TYPE_NULL;
+            if (*name != '.')
+                return;
+
+            char* funcNameEnd = strchr(funcName, NULL);
+            strcat(funcName, name);
+
+            if (usingStrtab) {
+                outFile.seekp(sym.coff->name.longName.offset + strtabPos);
+            }
+            else {
+                memset(sym.coff->name.shortName, 0, 8);
+                sym.coff->name.longName.offset = (fpos_t)outFile.tellp() - strtabPos;
+            }
+            outFile.write(funcName, strlen(funcName));
+
+            //cutting off 'name' for future use
+            *funcNameEnd = NULL;
+            break;
+        }
         default:
             sym.coff->type = symbol_type::IMAGE_SYM_TYPE_NULL;
         }
@@ -365,7 +390,7 @@ inline void WriteSymbolTable(const fs::path srcPath, SectionHeader* sections, co
     }
 
 
-    ConvertSymbols(symtab, strtabFirst - strtabSizeVar, sections);
+    ConvertSymbols(symtab, strtabFirst - strtabSizeVar);
     const ulong strtabSize = outFile.tellp() - strtabFirst + (fpos_t)strtabSizeVar;
     outFile.seekp(nextSymbol);
     outFile.write((char*)symtab.ptr, (symbolCount.sum() - 2 * symbolCount.sectionSymCount) * sizeof(COFF_Symbol));

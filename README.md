@@ -1,6 +1,6 @@
 # Introduction
 
-This is a personal project for an assembler. It's syntax is similar to Intel's with a few added functions.<br>
+This is a personal project for an assembler. It's syntax is similar to Intel's.<br>
 All the functions described below may not work on the current version.
 
 
@@ -19,14 +19,14 @@ basm \<command> [\<options>] [\<file> \<file>...]
    Compile all following files<br>
 
 There are no options implemented yet.<br>
-The compiler currently supports only win64 format.
 
 
 
 ## Executable
 
 The compiler does not include a linker. This means that if you want to create an executable,
-you will have to use a third party linker. Any linker should work.
+you will have to use a third party linker. Any linker should work.<br>
+The compiler can only output win64 object format.
 
 
 
@@ -89,11 +89,5 @@ static/global \<name>:<br>
 Names without a "global" or "static" keyword are interpreted as labels.<br>
 A function import is similar to a data import, but without a size:<br>
 extern \<name><br><br>
-
-
-The assembler also supports label hierarchy: After a top level label or function definition "static function:", 
-a child label can be given to it: ".loop". This label will be only accessible within it's parent's scope, 
-and it can also have children marked with another dot: "..loop".<br>
-This follows simple hierarchy rules seen in many other projects.<br>
 
 Every relative address has to be marked with the "rel" keyword, like in function calls and jumps.<br>
