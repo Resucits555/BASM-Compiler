@@ -179,6 +179,7 @@ inline SymtabArea FindSymbols(const SymbolScopeCount& symbolCount, SectionHeader
     const char* name;
     do {
         errorData.incLine();
+        symbol->value = -1;
 
         srcFile.getline(inputLine, FPOSMAX);
 
@@ -296,6 +297,9 @@ inline static void ConvertSymbols(const SymtabArea& symtab, const fpos_t strtabP
 
     SymPointer sym;
     for (sym.data = symtab.ptr; sym.data < symtab.end; sym.data++) {
+        if (sym.data->value == -1)
+            sym.data->value = 0;
+
         char name[maxLineSize] = "";
         sym.data->getName(name);
 

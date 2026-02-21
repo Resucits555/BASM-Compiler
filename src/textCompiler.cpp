@@ -313,7 +313,7 @@ inline static void ProcessMemoryReference(char* argstr, Argument& arg, const Sym
 
 
 
-inline static void ProcessSpecialArg(char* argstr, Argument& arg, const SymtabArea& symtab, Instruction& instr, char* const space) {
+inline static void ProcessSpecialArg(char* argstr, Argument& arg, const SymtabArea& symtab, Instruction& instr, char* const space, const fpos_t textPos) {
     if (char* bracket = strchr(argstr, '[')) {
         if (space != nullptr)
             *space = ' ';
@@ -327,10 +327,7 @@ inline static void ProcessSpecialArg(char* argstr, Argument& arg, const SymtabAr
 
         argstr = bracket + 1;
 
-        if (strncmp(argstr, "rel", 3) == 0) {
-            arg.relation = RELADDR;
-        }
-        else {
+        if (strncmp(argstr, "rel", 3) != 0) {
             arg.argDefined = true;
             ProcessMemoryReference(argstr, arg, symtab, instr);
             return;
@@ -344,27 +341,45 @@ inline static void ProcessSpecialArg(char* argstr, Argument& arg, const SymtabAr
     if (currentReloc >= relocEnd)
         CompilerError(errorData, "Relocs don't fit into .reloc");
 
+    char* closingBracket;
+    if (closingBracket = strchr(argstr, ']'))
+        *closingBracket = NULL;
+
+    SymbolData* symbol;
+
     if (strncmp(argstr, "rel", 3) == 0) {
         argstr += 4;
+        symbol = findSymbol(argstr, symtab, errorData);
+        if (closingBracket == nullptr) {
+            if (symbol->value != -1) {
+                //assuming worst case scenario instr size
+                if (symbol->value + textPos - 15 - (int)outFile.tellp() > -128) {
+                    arg.val = symbol->value + textPos - (int)outFile.tellp();
+                    arg.size = 8;
+                    arg.relation = ADDINSTRSIZE;
+                    return;
+                }
+            }
+            //TODO: Make jumps forward smaller
+        }
+
         currentReloc->type = amd_reloc_type::REL32;
         arg.relation = RELADDR;
     }
     else {
+        symbol = findSymbol(argstr, symtab, errorData);
         currentReloc->type = amd_reloc_type::ADDR64;
         arg.relation = ABSADDR;
     }
 
-    if (char* closingBracket = strchr(argstr, ']'))
-        *closingBracket = NULL;
-
-    currentReloc->symbolTableIndex = findSymbol(argstr, symtab, errorData) - symtab.ptr + requiredSymbolSpace;
+    currentReloc->symbolTableIndex = symbol - symtab.ptr + requiredSymbolSpace;
     currentReloc++;
 }
 
 
 
 
-inline static void GetArguments(Argument* args, const SymtabArea& symtab, Instruction& instr) {
+inline static void GetArguments(Argument* args, const SymtabArea& symtab, Instruction& instr, const fpos_t textPos) {
     for (sbyte i = 0; i <= 2; i++) {
         char* argstr = strtok(nullptr, ",");
         if (argstr == nullptr)
@@ -395,7 +410,7 @@ inline static void GetArguments(Argument* args, const SymtabArea& symtab, Instru
                 }
             }
             else {
-                ProcessSpecialArg(argstr, arg, symtab, instr, space);
+                ProcessSpecialArg(argstr, arg, symtab, instr, space, textPos);
             }
         }
     }
@@ -410,6 +425,8 @@ inline static void GetArguments(Argument* args, const SymtabArea& symtab, Instru
 inline static bool IsCorrectType(Argument& textArg, pugi::xml_node argNode, Instruction& instr, Requirement& prevReq) {
     char type[4];
     strcpy(type, argNode.first_child().next_sibling().child_value());
+    if (*type == NULL)
+        strcpy(type, argNode.attribute("type").as_string());
 
     ubyte arrayI = log2(textArg.size / 8);
 
@@ -501,6 +518,7 @@ inline static std::optional<Instruction> IsFittingInstruction(const Instruction&
     for (; textArgCounter < 2 && args[textArgCounter].addr != NULL; textArgCounter++);
 
     Requirement prevReq = NOREQUIREMENT;
+    bool addInstrSize = false;
 
     ubyte entryArgCounter = 0;
     for (pugi::xml_node argNode = syntax.first_child().next_sibling(); argNode.type() != pugi::node_null; argNode = argNode.next_sibling()) {
@@ -509,15 +527,19 @@ inline static std::optional<Instruction> IsFittingInstruction(const Instruction&
 
         char addressing[4];
         if (argNode.first_child().first_child().type() == pugi::node_null) {
-            if (*argNode.child_value() == 'S')
+            if (strncmp(argNode.child_value(), "SS", 2) == 0)
                 continue;
-            strcpy(addressing, argNode.child_value());
-            std::optional<Argument> entryArg = getRegArgument(addressing);
+
+            textArg.mutableSize = true;
+            entryArgCounter--;
+            if (!argNode.attribute("displayed").empty())
+                goto skipAddressing;
+
+            std::optional<Argument> entryArg = getRegArgument(argNode.child_value());
             if (entryArg != textArg)
                 return std::nullopt;
 
-            entryArgCounter++;
-            continue;
+            goto skipAddressing;
         }
 
         strcpy(addressing, argNode.first_child().child_value());
@@ -558,13 +580,16 @@ inline static std::optional<Instruction> IsFittingInstruction(const Instruction&
             break;
         }
         case IMM:
-            //TODO: Make jumps work again
             if (*addressing != 'I') {
-                if (*addressing != 'J' || textArg.relation != RELADDR)
+                if (*addressing != 'J' || (textArg.relation != RELADDR && textArg.relation != ADDINSTRSIZE))
                     return std::nullopt;
             }
 
             switch (textArg.relation) {
+            case ADDINSTRSIZE:
+                addInstrSize = true;
+                instr.immediate = textArg.val;
+                break;
             case NORELATION:
                 instr.immediate = textArg.val;
                 break;
@@ -641,6 +666,8 @@ inline static std::optional<Instruction> IsFittingInstruction(const Instruction&
 
     if (textArgCounter != entryArgCounter)
         return std::nullopt;
+
+    instr.immediate -= instr.size() * addInstrSize;
 
     return instr;
 }
@@ -794,9 +821,8 @@ inline void CompileSource(SectionHeader* sections, const SymtabArea& symtab) {
             continue;
 
         Instruction instr;
-        //TODO: 3 arguments
         Argument args[2];
-        GetArguments(args, symtab, instr);
+        GetArguments(args, symtab, instr, textPos);
 
         instr = FindInstruction(instr, firstToken, args, one_byte);
 

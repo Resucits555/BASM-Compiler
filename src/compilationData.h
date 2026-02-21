@@ -27,7 +27,8 @@ enum addressing : ubyte {
 enum addressRelation : ubyte {
     NORELATION,
     ABSADDR,
-    RELADDR
+    RELADDR,
+    ADDINSTRSIZE
 };
 
 
