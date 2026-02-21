@@ -15,8 +15,11 @@ const REX_t REX;
 enum addressing : ubyte {
     NOADDR,
     REG,
+    IMM,
     MEM,
-    IMM
+    XMM,
+    MMX,
+    ST
 };
 
 
@@ -32,7 +35,7 @@ enum addressRelation : ubyte {
 
 struct Argument {
     uint64_t val = 0;
-    //Size of final variable. Like in [rax], this would represent the size of the referenced address
+    //Size of final variable in bits. Like in [rax], this would represent the size of the referenced address
     ushort size = 0;
     bool mutableSize = false;
     enum addressing addr = NOADDR;
@@ -153,6 +156,7 @@ struct modrmSibSetting {
 
 
 enum Requirement : ubyte {
+    NOREQUIREMENT = 0,
     OPERAND = 1,  //needs operand size prefix
     ADDRESS = 2,  //needs address size prefix
     REXW = 3,     //needs REX.W prefix

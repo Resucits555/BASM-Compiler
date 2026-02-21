@@ -29,7 +29,7 @@ static ubyte minBitsToStore(uint64_t value, const bool isSigned) {
 
 
 static std::optional<Argument> getRegArgument(const char* argstr) {
-    const ubyte strSize = 5;
+    const ubyte strSize = 6;
 
     ubyte argLen = strlen(argstr);
     if (argLen >= strSize)
@@ -44,17 +44,41 @@ static std::optional<Argument> getRegArgument(const char* argstr) {
     "ax", "cx", "dx", "bx", "sp", "bp", "si", "di", "r8w", "r9w", "r10w", "r11w", "r12w", "r13w", "r14w", "r15w",
     "eax", "ecx", "edx", "ebx", "esp", "ebp", "esi", "edi", "r8d", "r9d", "r10d", "r11d", "r12d", "r13d", "r14d", "r15d",
     "rax", "rcx", "rdx", "rbx", "rsp", "rbp", "rsi", "rdi", "r8", "r9", "r10", "r11", "r12", "r13", "r14", "r15",
-    /*"spl", "bpl", "sil", "dil"
     "xmm0", "xmm1", "xmm2", "xmm3", "xmm4", "xmm5", "xmm6", "xmm7", "xmm8", "xmm9", "xmm10", "xmm11", "xmm12", "xmm13", "xmm14", "xmm15",
-    "ymm0", "ymm1", "ymm2", "ymm3", "ymm4", "ymm5", "ymm6", "ymm7", "ymm8", "ymm9", "ymm10", "ymm11", "ymm12", "ymm13", "ymm14", "ymm15",
+
+    "mmx0", "mmx1", "mmx2", "mmx3", "mmx4", "mmx5", "mmx6", "mmx7",
     "st0", "st1", "st2", "st3", "st4", "st5", "st6", "st7",
-    "mmx0", "mmx1", "mmx2", "mmx3", "mmx4", "mmx5", "mmx6", "mmx7"*/
+    "spl", "bpl", "sil", "dil"
     };
     std::optional<ubyte> reg = findStringInArray(regStr, *registers, std::size(registers), strSize);
     if (!reg.has_value())
         return std::nullopt;
 
-    Argument arg = { (ubyte)(*reg % 16), (ubyte)(pow(2, *reg >> 4) * 8), false, REG };
+    Argument arg = { (ubyte)(*reg % 16), (ushort)(pow(2, *reg >> 4) * 8), false, REG };
+
+    const ubyte specialRegisters = 80;
+    if (*reg >= specialRegisters) {
+        switch ((*reg - 80) >> 3) {
+        case 0:
+            arg.addr = MMX;
+            break;
+        case 1:
+            arg.addr = ST;
+            arg.val = *reg % 8;
+            break;
+        case 2:
+            arg.val += 4;
+        }
+
+        arg.size = 8;
+        arg.mutableSize = true;
+    }
+    else if (*reg >= specialRegisters - 16) {
+        arg.addr = XMM;
+        arg.size = 8;
+        arg.mutableSize = true;
+    }
+
     return arg;
 }
 
@@ -361,10 +385,18 @@ inline static void GetArguments(Argument* args, const SymtabArea& symtab, Instru
         }
         else {
             std::optional<Argument> regArg = getRegArgument(argstr);
-            if (regArg.has_value())
+            if (regArg.has_value()) {
                 arg = regArg.value();
-            else
+
+                const ushort new8bitRegisterIndicator = 1024;
+                if (arg.size == new8bitRegisterIndicator) {
+                    instr.addPrefix(0x40);
+                    arg.size = 8;
+                }
+            }
+            else {
                 ProcessSpecialArg(argstr, arg, symtab, instr, space);
+            }
         }
     }
 
@@ -399,7 +431,7 @@ inline static bool IsCorrectType(Argument& textArg, pugi::xml_node argNode, Inst
     retry:
     const std::optional<ubyte> operandI = findStringInArray(type, operands[arrayI], arraySizes[arrayI], strSize);
     if (!operandI.has_value()) {
-        if (textArg.addr == IMM && arrayI < 3) {
+        if (textArg.mutableSize && arrayI < 3) {
             arrayI++;
             goto retry;
         }
@@ -414,7 +446,7 @@ inline static bool IsCorrectType(Argument& textArg, pugi::xml_node argNode, Inst
 
     if (req & 3) {
         if ((prevReq & 7 && prevReq != req)) {
-            if (textArg.addr == IMM && arrayI < 3) {
+            if (textArg.mutableSize && arrayI < 3) {
                 arrayI++;
                 goto retry;
             }
@@ -428,7 +460,7 @@ inline static bool IsCorrectType(Argument& textArg, pugi::xml_node argNode, Inst
             instr.addPrefix(prefixValues[req]);
     }
     else if ((prevReq & 3 && prevReq != REXW && req & NOMODIF) || (prevReq & REXW && req & NOREXW)) {
-        if (textArg.addr == IMM && arrayI < 3) {
+        if (textArg.mutableSize && arrayI < 3) {
             arrayI++;
             goto retry;
         }
@@ -447,28 +479,28 @@ inline static bool IsCorrectType(Argument& textArg, pugi::xml_node argNode, Inst
 inline static std::optional<Instruction> IsFittingInstruction(const Instruction& predefinedInstr, const pugi::xml_node pri_opcd, const pugi::xml_node syntax, Argument* args) {
     Instruction instr = predefinedInstr;
 
-    if (strcmp(pri_opcd.parent().name(), "two-byte") == 0) {
-        instr.opcode[0] = 0x0F;
+    ubyte& po = instr.opcode[instr.primaryOpcodeIndex];
+    po = std::stoi(pri_opcd.first_attribute().value(), nullptr, 16);
+
+    const pugi::xml_node sec_opcd = syntax.parent().child("sec_opcd");
+    if (sec_opcd.type() != pugi::node_null) {
         instr.primaryOpcodeIndex++;
+        instr.opcode[instr.primaryOpcodeIndex] = std::stoi(sec_opcd.child_value(), nullptr, 16);
     }
 
-    ubyte& po = instr.opcode[instr.primaryOpcodeIndex];
 
-    po = std::stoi(pri_opcd.first_attribute().value(), nullptr, 16);
-    
-    ubyte textArgCounter = 0;
-    for (;textArgCounter < 2 && args[textArgCounter].addr != NULL; textArgCounter++);
-
-
-    if (pugi::xml_node mandatoryPref = syntax.parent().child("pref"))
-        instr.addPrefix(std::stoi(mandatoryPref.child_value(), nullptr, 16));
+    if (pugi::xml_node mandatoryPrefix = syntax.parent().child("pref"))
+        instr.addPrefix(std::stoi(mandatoryPrefix.child_value(), nullptr, 16));
     if (pugi::xml_node opcd_ext = syntax.parent().child("opcd_ext")) {
         instr.modrmUsed = true;
         instr.modrm.reg = std::stoi(opcd_ext.child_value());
     }
 
 
-    Requirement prevReq = (Requirement)0;
+    ubyte textArgCounter = 0;
+    for (; textArgCounter < 2 && args[textArgCounter].addr != NULL; textArgCounter++);
+
+    Requirement prevReq = NOREQUIREMENT;
 
     ubyte entryArgCounter = 0;
     for (pugi::xml_node argNode = syntax.first_child().next_sibling(); argNode.type() != pugi::node_null; argNode = argNode.next_sibling()) {
@@ -496,9 +528,11 @@ inline static std::optional<Instruction> IsFittingInstruction(const Instruction&
             goto skipAddressing;
         }
 
+        if (addressing[1] != NULL && (textArg.addr != MEM && textArg.addr != ST))
+            return std::nullopt;
+
         switch (textArg.addr) {
-        case REG:
-        {
+        case REG: {
             bool extension = textArg.val >= 8;
 
             switch (*addressing) {
@@ -524,6 +558,7 @@ inline static std::optional<Instruction> IsFittingInstruction(const Instruction&
             break;
         }
         case IMM:
+            //TODO: Make jumps work again
             if (*addressing != 'I') {
                 if (*addressing != 'J' || textArg.relation != RELADDR)
                     return std::nullopt;
@@ -559,6 +594,41 @@ inline static std::optional<Instruction> IsFittingInstruction(const Instruction&
                 instr.dispSize = 4;
                 instr.reloc = (instr_reloc)((int)instr.reloc | (int)instr_reloc::DISP);
             }
+            break;
+        case XMM: {
+            bool extension = textArg.val >= 8;
+
+            switch (*addressing) {
+            case 'U':
+            case 'W':
+                instr.modrmUsed = true;
+                instr.modrm.rm = textArg.val - (8 * extension);
+                instr.rex |= REX.B * extension;
+                break;
+            case 'V':
+                instr.modrmUsed = true;
+                instr.modrm.reg = textArg.val - (8 * extension);
+                instr.rex |= REX.R * extension;
+            }
+            break;
+        }
+        case MMX:
+            switch (*addressing) {
+            case 'N':
+            case 'Q':
+                instr.modrmUsed = true;
+                instr.modrm.rm = textArg.val;
+                break;
+            case 'P':
+                instr.modrmUsed = true;
+                instr.modrm.reg = textArg.val;
+            }
+            break;
+        case ST:
+            if (strncmp(addressing, "ES", 2) != 0)
+                return std::nullopt;
+            instr.modrmUsed = true;
+            instr.modrm.rm = textArg.val;
         }
 
 
@@ -578,7 +648,7 @@ inline static std::optional<Instruction> IsFittingInstruction(const Instruction&
 
 
 
-inline static Instruction FindInstruction(const Instruction& predefinedInstr, char* mnemonic, Argument* args, const pugi::xml_node one_byte) {
+inline static Instruction FindInstruction(Instruction& predefinedInstr, char* mnemonic, Argument* args, const pugi::xml_node one_byte) {
     for (ubyte chr = 0; chr < strlen(mnemonic); chr++)
         mnemonic[chr] = std::toupper(mnemonic[chr]);
 
@@ -608,8 +678,11 @@ inline static Instruction FindInstruction(const Instruction& predefinedInstr, ch
             }
         }
 
-        if (pri_opcd.first_attribute().as_int() == 0xFF)
+        if (std::stoi(pri_opcd.first_attribute().value(), nullptr, 16) == 0xFF) {
             pri_opcd = one_byte.next_sibling().first_child();
+            predefinedInstr.opcode[0] = 0x0F;
+            predefinedInstr.primaryOpcodeIndex++;
+        }
     }
 
     if (!bestInstrFound.has_value())
@@ -721,6 +794,7 @@ inline void CompileSource(SectionHeader* sections, const SymtabArea& symtab) {
             continue;
 
         Instruction instr;
+        //TODO: 3 arguments
         Argument args[2];
         GetArguments(args, symtab, instr);
 

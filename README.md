@@ -29,6 +29,8 @@ The compiler only supports the win64 object format.
 
 # Syntax
 
+The compiler does not have full functionality, some registers are not supported and there are a lot of bugs hidden.<br>
+
 Sections are marked with the "section" keyword, followed by it's name: ".text", ".data", ".bss".<br>
 Section declarations must be at the start of the line with no indentation allowed.
 Multiple sections of the same type are not allowed, like having two .text sections in one file.
