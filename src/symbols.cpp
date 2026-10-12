@@ -307,7 +307,7 @@ inline static void ConvertSymbols(const SymtabArea& symtab, const fpos_t strtabP
         if (usingStrtab) {
             memset(sym.coff->name.shortName, 0, 8);
             sym.coff->name.longName.offset = (fpos_t)outFile.tellp() - strtabPos;
-            outFile.write(name, sym.data->nameLen + terminatingNull);
+            outFile.write(name, sym.data->nameLen);
         }
         else {
             strncpy(sym.coff->name.shortName, name, 8);

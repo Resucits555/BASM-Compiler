@@ -179,7 +179,7 @@ inline static COFF_Relocation* CreateReloc(const SymtabArea& symtab) {
 
 
 
-inline static void ProcessMemoryReference(char* argstr, Argument& arg, const SymtabArea& symtab, Instruction& instr) {
+inline static void ProcessMemoryReference(char* argstr, Instruction& instr) {
     //disps, regs, constants are "vars"
     char* vars[4] = { argstr };
     //1 char padding
@@ -241,7 +241,7 @@ inline static void ProcessMemoryReference(char* argstr, Argument& arg, const Sym
             std::optional<Argument> regArg = getRegArgument(var);
             if (regArg.has_value()) {
                 if (regArg.value().size != 64)
-                    Error(errorData, "Only 8 bytes sized registers possible");
+                    Error(errorData, "Only 8 bytes sized registers allowed in square brackets");
 
                 if (opers[varI] == '*' || opers[varI + 1] == '*') {
                     instr.sib.index = regArg.value().val;
@@ -329,7 +329,7 @@ inline static void ProcessSpecialArg(char* argstr, Argument& arg, const SymtabAr
 
         if (strncmp(argstr, "rel", 3) != 0) {
             arg.argDefined = true;
-            ProcessMemoryReference(argstr, arg, symtab, instr);
+            ProcessMemoryReference(argstr, instr);
             return;
         }
     }
@@ -425,8 +425,11 @@ inline static void GetArguments(Argument* args, const SymtabArea& symtab, Instru
 inline static bool IsCorrectType(Argument& textArg, pugi::xml_node argNode, Instruction& instr, Requirement& prevReq) {
     char type[4];
     strcpy(type, argNode.first_child().next_sibling().child_value());
-    if (*type == NULL)
+    if (*type == NULL) {
         strcpy(type, argNode.attribute("type").as_string());
+        if (*type == NULL)
+            return true;
+    }
 
     ubyte arrayI = log2(textArg.size / 8);
 
@@ -545,7 +548,7 @@ inline static std::optional<Instruction> IsFittingInstruction(const Instruction&
         strcpy(addressing, argNode.first_child().child_value());
 
         if (textArg.argDefined) {
-            if (*addressing != 'E')
+            if (*addressing != 'E' && *addressing != 'M')
                 return std::nullopt;
             goto skipAddressing;
         }
@@ -568,7 +571,6 @@ inline static std::optional<Instruction> IsFittingInstruction(const Instruction&
                 instr.rex |= REX.B * extension;
                 break;
             case 'G':
-                instr.modrmUsed = true;
                 instr.modrm.reg = textArg.val - (8 * extension);
                 instr.rex |= REX.R * extension;
                 break;
