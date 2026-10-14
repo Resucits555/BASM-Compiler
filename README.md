@@ -39,9 +39,7 @@ There are three keywords that define the scope of a variable or function:<br>
 A "static" symbol is inaccessible to the files this file gets linked to.<br>
 A "global" symbol is accessible to other files, it is therefore exported.<br>
 An "extern" symbol is defined in another file, it is therefore imported.<br>
-The keyword "static" is used exclusively for functions, variables must not have that keyword.<br>
-
-Note that spaces around '=' or after commas are required, unlike in other languages and compilers.
+The keyword "static" is used exclusively for functions, variables must not have that keyword.
 
 
 
@@ -56,13 +54,15 @@ There is only one variable type family. The family consists of fixed size variab
 
 These sections contain initialized data.
 The syntax looks like this:<br>
-[global] \<type> \<name> = \<value><br>
+[global] \<type> \<name> = \<value>[, \<value>...]<br>
 
 Variables in this section have to be initialized.<br>
 
 For any string, use doubled quotation marks: "abc".
 Quotation marks inside the string do not need to be marked in any way, 
-they're taken as any other character in the string.
+they're taken as any other character in the string.<br>
+Multiple values can be given to the same name, using a comma to separate each, 
+but note that because strings end at the last quotation mark, this does not work for them.
 
 
 

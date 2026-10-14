@@ -11,8 +11,8 @@ static bool isValidSymbol(const char* str, Section section) {
     "",
     "",
     "(extern )?[a-zA-Z]+ [a-zA-Z_]\\w*\\s?(\\[\\d+\\])?\\s*",
-    "(global )?[a-zA-Z]+ [a-zA-Z_]\\w* = \"?.*\"?\\s*",
-    "(global )?[a-zA-Z]+ [a-zA-Z_]\\w* = \"?.*\"?\\s*" };
+    "(global )?[a-zA-Z]+ [a-zA-Z_]\\w* *= *\"?.*\"?\\s*",
+    "(global )?[a-zA-Z]+ [a-zA-Z_]\\w* *= *\"?.*\"?\\s*" };
 
     return std::regex_match(str, std::regex(regexes[section - 1]));
 }
@@ -129,16 +129,17 @@ inline SymbolScopeCount CountSymbols(SectionHeader* sections) {
 
 inline static ulong InitializeSymbol(SymbolData* symbol, const char* nameEnd, ErrorData errorData) {
     ulong dataSize = 0;
-    const char* init = nameEnd + 2;
+    const char* init = nameEnd;
 
     do {
+        init = strpbrk(init, "0123456789\"");
         if (*init == '"') {
             symbol->size = SizeType::NUL;
             const char* stringEnd = strrchr(init, '"') - 1;
             outFile.write(init + 1, stringEnd - init);
             dataSize += stringEnd - init;
 
-            init = stringEnd + 4;
+            init = stringEnd;
         }
         else {
             long long varVal;
@@ -150,9 +151,9 @@ inline static ulong InitializeSymbol(SymbolData* symbol, const char* nameEnd, Er
             outFile.write((char*)&varVal, (int)symbol->size);
             dataSize += (ulong)symbol->size;
 
-            init += len + 2;
+            init += len;
         }
-    } while (*(init - 2));
+    } while (strchr(init, ','));
 
     return dataSize;
 }
@@ -246,7 +247,7 @@ inline SymtabArea FindSymbols(const SymbolScopeCount& symbolCount, SectionHeader
         }
 
 
-        name = strtok(nullptr, " :[");
+        name = strtok(nullptr, " =:[");
         symbol->nameRef = (srcFile.tellg() - srcFile.gcount()) + (name - formattedLine);
         symbol->nameLen = strlen(name) + terminatingNull;
 
@@ -262,7 +263,7 @@ inline SymtabArea FindSymbols(const SymbolScopeCount& symbolCount, SectionHeader
             sections[currentSection].sizeOfRawData += dataSize;
         }
 
-
+        
         if (symbol->isDefinedFunction()) {
             if (prevAux != nullptr) {
                 const ushort fileSymbol = 2;
