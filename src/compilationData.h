@@ -117,11 +117,19 @@ public:
         return prefixI;
     }
 
-    void addPrefix(const ubyte prefix) {
-        if (prefix >= 0x40 && prefix < 0x50)
-            rex |= prefix;
-        else
-            prefixes[getPrefixCount()] = prefix;
+    bool hasPrefix(const ubyte inputPrefix) const {
+        return memchr(prefixes, inputPrefix, std::size(prefixes)) != nullptr;
+    }
+
+    void addPrefix(const ubyte inputPrefix) {
+        if (inputPrefix >= 0x40 && inputPrefix < 0x50) {
+            rex |= inputPrefix;
+        }
+        else {
+            if (hasPrefix(inputPrefix))
+                return;
+            prefixes[getPrefixCount()] = inputPrefix;
+        }
 
         if (getPrefixCount() + (bool)rex > 4)
             CompilerError("Prefix overflow");
@@ -162,6 +170,6 @@ enum Requirement : ubyte {
     ADDRESS = 2,  //needs address size prefix
     REXW = 3,     //needs REX.W prefix
     NOMODIF = 4,  //no size prefixes allowed
-    NOREXW = 8,   //no REX.w prefix allowed
-    DOUBLED = 16  //see 'a' operand type
+    NOREXW = 8,   //no REX.W prefix allowed
+    DOUBLED = 16  //operand is doubled. See "a" operand type. Currently unsupported
 };

@@ -476,8 +476,7 @@ inline static bool IsCorrectType(Argument& textArg, pugi::xml_node argNode, Inst
         }
 
         const unsigned char prefixValues[] = { 0, operandSizePrefix, addressSizePrefix, REX.W };
-        if (!memchr(instr.prefixes, req, std::size(instr.prefixes)))
-            instr.addPrefix(prefixValues[req]);
+        instr.addPrefix(prefixValues[req]);
     }
     else if ((prevReq & 3 && prevReq != REXW && req & NOMODIF) || (prevReq & REXW && req & NOREXW)) {
         if (textArg.mutableSize && arrayI < 3) {
@@ -677,30 +676,51 @@ inline static std::optional<Instruction> IsFittingInstruction(const Instruction&
 
 
 
-inline static Instruction FindInstruction(Instruction& predefinedInstr, char* mnemonic, Argument* args, const pugi::xml_node one_byte) {
-    for (ubyte chr = 0; chr < strlen(mnemonic); chr++)
-        mnemonic[chr] = std::toupper(mnemonic[chr]);
+inline static Instruction FindInstruction(Instruction& predefinedInstr, char* mnemonic, Argument* args, const pugi::xml_node one_byte, char* prefix) {
+    //TODO: Check if LOCK prefix is allowed
+    bool isRepPrefix = false;
+    if (prefix != nullptr) {
+        const ubyte repPrefixesLen = 6;
+        static const char repPrefixes[][repPrefixesLen] = {"REP", "REPNZ", "REPNE", "REPZ", "REPE"};
+        isRepPrefix = findStringInArray(prefix, *repPrefixes, std::size(repPrefixes), repPrefixesLen).has_value();
+    }
+
 
     std::optional<Instruction> bestInstrFound;
-    ubyte bestInstrSize = -1;
+    ubyte bestInstrSize = UINT8_MAX;
 
+    //TODO: Remove pri_opcd for loop
     for (auto pri_opcd = one_byte.first_child(); pri_opcd.type() != pugi::node_null; pri_opcd = pri_opcd.next_sibling()) {
         for (auto entry = pri_opcd.first_child(); entry.type() != pugi::node_null; entry = entry.next_sibling()) {
             for (auto syntax = entry.child("syntax"); strcmp(syntax.name(), "syntax") == 0; syntax = syntax.next_sibling()) {
-                if (strcmp(mnemonic, syntax.first_child().child_value()) != 0 || (*entry.attribute("mode").value() != 'e' && *entry.next_sibling().attribute("mode").value() == 'e'))
+                const pugi::char_t* group1 = syntax.parent().child("grp1").first_child().value();
+
+                if (prefix != nullptr && strcmp(prefix, syntax.first_child().child_value()) == 0) {
+                    ubyte prefixValue = std::stoi(pri_opcd.first_attribute().value(), nullptr, 16);
+                    if (strcmp(prefix, "REP") == 0 && prefixValue == 0xF2)
+                        continue;
+
+                    predefinedInstr.addPrefix(prefixValue);
+                    if (bestInstrFound.has_value())
+                        bestInstrFound.value().addPrefix(prefixValue);
+                }
+
+                if (strcmp(mnemonic, syntax.first_child().child_value()) != 0 ||
+                    (*entry.attribute("mode").value() != 'e' && *entry.next_sibling().attribute("mode").value() == 'e'))
                     continue;
+
+                if (strcmp(group1, "prefix") == 0)
+                    Error(errorData, "Prefix is being used as an operation mnemonic");
+                if (isRepPrefix &&
+                    strcmp(syntax.parent().child("grp2").first_child().value(), "string") != 0 &&
+                    strcmp(syntax.parent().child("grp2").next_sibling().first_child().value(), "string") != 0)
+                    Error(errorData, "REP family prefix cannot be applied to this operation");
 
                 std::optional<Instruction> newInstruction = IsFittingInstruction(predefinedInstr, pri_opcd, syntax, args);
                 if (!newInstruction.has_value())
                     continue;
 
-                if (bestInstrFound.has_value()) {
-                    if (newInstruction.value().size() < bestInstrSize) {
-                        bestInstrFound = newInstruction;
-                        bestInstrSize = newInstruction.value().size();
-                    }
-                }
-                else {
+                if (newInstruction.value().size() < bestInstrSize) {
                     bestInstrFound = newInstruction;
                     bestInstrSize = newInstruction.value().size();
                 }
@@ -714,6 +734,7 @@ inline static Instruction FindInstruction(Instruction& predefinedInstr, char* mn
         }
     }
 
+    //TODO: Check mnemonic occurences and if there are none, give out "no such opcode" error
     if (!bestInstrFound.has_value())
         Error(errorData, "No fitting opcode found. One of the arguments could be invalid for this instruction. A \"rel\" could also be missing");
 
@@ -818,19 +839,34 @@ inline void CompileSource(SectionHeader* sections, const SymtabArea& symtab) {
             continue;
         }
 
-        char* firstToken = strtok(inputLine, instrDelimiters);
-        if (strncmp(firstToken, "extern", 7) == 0)
+
+        char* mnemonic = strtok(inputLine, instrDelimiters);
+        toUpperString(mnemonic);
+        if (strncmp(mnemonic, "EXTERN", 7) == 0)
             continue;
+        char* prefix = nullptr;
+
+        const ubyte prefixNameLen = 7;
+        static const char prefixNames[][prefixNameLen] = {
+            "LOCK", "REP", "REPNZ", "REPNE", "REPZ", "REPE", "CS", "SS", "DS", "ES", "FS", "GS", "NTAKEN", "TAKEN"
+        };
+
+        bool hasPrefix = findStringInArray(mnemonic, *prefixNames, std::size(prefixNames), prefixNameLen).has_value();
+        if (hasPrefix) {
+            prefix = mnemonic;
+            mnemonic = strtok(nullptr, instrDelimiters);
+            toUpperString(mnemonic);
+        }
 
         Instruction instr;
         Argument args[2];
         GetArguments(args, symtab, instr, textPos);
 
-        instr = FindInstruction(instr, firstToken, args, one_byte);
+        instr = FindInstruction(instr, mnemonic, args, one_byte, prefix);
 
         WriteToExe(outFile, instr, textPos);
 
-        if (strcmp(firstToken, "RETN") == 0 && currentFunction) {
+        if (strcmp(mnemonic, "RETN") == 0 && currentFunction) {
             AuxiliaryFunctionDefinition* aux = (AuxiliaryFunctionDefinition*)currentFunction + 1;
             aux->TotalSize = (uint32_t)outFile.tellp() - currentFunction->value - textPos;
             currentFunction = nullptr;

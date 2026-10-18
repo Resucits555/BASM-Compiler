@@ -124,6 +124,15 @@ SymbolData* findSymbol(const char* name, const SymtabArea& symtab, const ErrorDa
 
 
 
+void toUpperString(char* string) {
+    for (ubyte chr = 0; chr < strlen(string); chr++)
+        string[chr] = std::toupper(string[chr]);
+}
+
+
+
+
+
 inline static ubyte GetCommand(const ubyte argc, char** argv) {
     if (argc < 2)
         Error("Command missing. Type \"basm help\" to learn how to use this program");

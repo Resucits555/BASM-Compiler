@@ -232,6 +232,7 @@ extern NORETURN void CompilerError(const char* message);
 extern NORETURN void CompilerError(const ErrorData errorData, const char* message);
 extern std::optional<ubyte> findStringInArray(const char* string, const char* array, ushort arraySize, const ubyte arrayStrLen);
 extern SymbolData* findSymbol(const char* name, const SymtabArea& symtab, const ErrorData errorData);
+extern void toUpperString(char* string);
 
 extern SymbolScopeCount CountSymbols(SectionHeader* sections);
 extern SymtabArea FindSymbols(const SymbolScopeCount& symbolCount, SectionHeader* sections);
